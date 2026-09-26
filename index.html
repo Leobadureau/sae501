@@ -8,10 +8,82 @@
   <style>
     body {
       margin: 0;
+      overflow: hidden;
     }
 
     canvas {
       touch-action: none;
+    }
+
+    #mobile-movement {
+      position: fixed;
+      z-index: 10;
+      left: max(20px, env(safe-area-inset-left));
+      bottom: max(20px, env(safe-area-inset-bottom));
+      display: none;
+      width: 120px;
+      height: 120px;
+      touch-action: none;
+      user-select: none;
+    }
+
+    #movement-joystick {
+      position: absolute;
+      inset: 0;
+      border: 1px solid rgba(255, 255, 255, 0.45);
+      border-radius: 50%;
+      background: rgba(12, 20, 24, 0.38);
+      touch-action: none;
+    }
+
+    #movement-knob {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 48px;
+      height: 48px;
+      border: 1px solid rgba(255, 255, 255, 0.8);
+      border-radius: 50%;
+      background: rgba(125, 207, 190, 0.85);
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+    }
+
+    #vr-button {
+      position: fixed;
+      z-index: 10;
+      right: max(20px, env(safe-area-inset-right));
+      bottom: max(20px, env(safe-area-inset-bottom));
+      padding: 12px 16px;
+      border: 1px solid rgba(255, 255, 255, 0.65);
+      border-radius: 6px;
+      background: rgba(12, 20, 24, 0.75);
+      color: white;
+      font: 600 15px sans-serif;
+      touch-action: manipulation;
+    }
+
+    #vr-button[hidden], #xr-status[hidden] {
+      display: none;
+    }
+
+    #xr-status {
+      position: fixed;
+      z-index: 10;
+      right: max(20px, env(safe-area-inset-right));
+      bottom: max(72px, calc(env(safe-area-inset-bottom) + 72px));
+      max-width: 240px;
+      margin: 0;
+      color: white;
+      font: 14px sans-serif;
+      text-align: right;
+      text-shadow: 0 1px 3px black;
+    }
+
+    @media (max-width: 760px) {
+      #mobile-movement {
+        display: block;
+      }
     }
   </style>
 </head>
@@ -27,6 +99,13 @@
       }
     }
   </script>
+  <div id="mobile-movement" aria-label="Déplacement">
+    <button id="movement-joystick" type="button" aria-label="Joystick de déplacement">
+      <span id="movement-knob"></span>
+    </button>
+  </div>
+  <button id="vr-button" type="button" hidden>Entrer en VR</button>
+  <p id="xr-status" role="status" hidden></p>
   <script src="https://cdn.jsdelivr.net/npm/stats.js@0.17.0/build/stats.min.js"></script>
   <script type="module">
     import * as THREE from "three";
@@ -36,6 +115,9 @@
 
     const RENDER_TIMEOUT_MS = 5 * 1000;
     const URL_BASE = ".";
+    const SPAWN_POSITION = new THREE.Vector3(0, 1.5, -3.9);
+    const MOVEMENT_RADIUS = 4;
+    const MOVEMENT_SPEED = 2;
 
     const scene = new THREE.Scene();
     // scene.background = new THREE.Color(0.75, 1.0, 1.0);
@@ -49,7 +131,7 @@
     // the camera, or as a frame of reference in WebXR mode
     const localFrame = new THREE.Group();
     scene.add(localFrame);
-    localFrame.position.set(0, 1.5, -3.9);
+    localFrame.position.copy(SPAWN_POSITION);
 
     // Lower the splat rendering width to sqrt(5) std devs for more performance
     const spark = new SparkRenderer({
@@ -166,16 +248,83 @@
     controls.pointerControls.rotateSpeed *= 2.0;
     controls.pointerControls.slideSpeed *= 0.75;
 
+    const movementJoystick = document.getElementById("movement-joystick");
+    const movementKnob = document.getElementById("movement-knob");
+    const movementInput = new THREE.Vector2();
+    const joystickRadius = 42;
+    let joystickPointerId = null;
+
+    function updateJoystick(event) {
+      const bounds = movementJoystick.getBoundingClientRect();
+      const offsetX = event.clientX - (bounds.left + bounds.width / 2);
+      const offsetY = event.clientY - (bounds.top + bounds.height / 2);
+      const distance = Math.hypot(offsetX, offsetY);
+      const strength = Math.min(distance / joystickRadius, 1);
+      if (distance > 0) {
+        movementInput.set(offsetX / distance * strength, offsetY / distance * strength);
+      } else {
+        movementInput.set(0, 0);
+      }
+      movementKnob.style.transform = `translate(calc(-50% + ${movementInput.x * joystickRadius}px), calc(-50% + ${movementInput.y * joystickRadius}px))`;
+    }
+
+    movementJoystick.addEventListener("pointerdown", (event) => {
+      joystickPointerId = event.pointerId;
+      movementJoystick.setPointerCapture(event.pointerId);
+      updateJoystick(event);
+    });
+    movementJoystick.addEventListener("pointermove", (event) => {
+      if (event.pointerId === joystickPointerId) updateJoystick(event);
+    });
+    function releaseJoystick(event) {
+      if (event.pointerId !== joystickPointerId) return;
+      joystickPointerId = null;
+      movementInput.set(0, 0);
+      movementKnob.style.transform = "translate(-50%, -50%)";
+    }
+    movementJoystick.addEventListener("pointerup", releaseJoystick);
+    movementJoystick.addEventListener("pointercancel", releaseJoystick);
+
+    function updateMovement(deltaTime) {
+      if (!xr.session) {
+        const yaw = new THREE.Euler().setFromQuaternion(localFrame.quaternion, "YXZ").y;
+        const movement = new THREE.Vector3(movementInput.x, 0, -movementInput.y);
+        movement.applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
+        localFrame.position.addScaledVector(movement, deltaTime / 1000 * MOVEMENT_SPEED);
+
+        const offsetX = localFrame.position.x - SPAWN_POSITION.x;
+        const offsetZ = localFrame.position.z - SPAWN_POSITION.z;
+        const distance = Math.hypot(offsetX, offsetZ);
+        if (distance > MOVEMENT_RADIUS) {
+          const scale = MOVEMENT_RADIUS / distance;
+          localFrame.position.x = SPAWN_POSITION.x + offsetX * scale;
+          localFrame.position.z = SPAWN_POSITION.z + offsetZ * scale;
+        }
+        localFrame.position.y = SPAWN_POSITION.y;
+      }
+    }
+
+    const xrButton = document.getElementById("vr-button");
+    const xrStatus = document.getElementById("xr-status");
+
     const xr = new SparkXr({
       renderer,
+      mode: "vr",
+      allowMobileXr: true,
+      element: xrButton,
       onMouseLeaveOpacity: 0.5,
-      onReady: async (supported) => {
+      onReady: (supported) => {
         console.log(`SparkXr initialized: XR ${supported ? "supported" : "not supported"}`);
+        xrButton.hidden = !supported;
+        xrStatus.hidden = supported;
+        if (!supported) xrStatus.textContent = "VR indisponible : navigateur XR et casque compatibles requis";
       },
       onEnterXr: () => {
+        xrButton.textContent = "Quitter la VR";
         console.log("Enter XR");
       },
       onExitXr: () => {
+        xrButton.textContent = "Entrer en VR";
         console.log("Exit XR");
       },
       // enableHands: true,
@@ -214,6 +363,7 @@
 
       xr.updateControllers(camera);
       controls.update(localFrame, camera);
+      updateMovement(deltaTime);
 
       const now = performance.now();
       const dir = localFrame.getWorldDirection(new THREE.Vector3());

@@ -20,6 +20,11 @@ python3 -m http.server 8000
 
 Then open [http://localhost:8000](http://localhost:8000) in your browser.
 
+## Controls
+
+- On a phone, drag the scene to look around and use the joystick at the lower left to move. Movement is limited to a 4-unit radius around the starting point.
+- VR is available only when the browser and headset support immersive WebXR. Use a compatible browser over HTTPS, such as the GitHub Pages site.
+
 ### Using Node.js
 
 Alternatively, if you have Node.js installed:
