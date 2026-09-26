@@ -124,6 +124,22 @@
 
     const scene = new THREE.Scene();
     // scene.background = new THREE.Color(0.75, 1.0, 1.0);
+    const movementPerimeter = new THREE.Mesh(
+      new THREE.RingGeometry(MOVEMENT_RADIUS - 0.035, MOVEMENT_RADIUS, 96),
+      new THREE.MeshBasicMaterial({
+        color: 0xffc857,
+        transparent: true,
+        opacity: 0.85,
+        depthTest: false,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      })
+    );
+    movementPerimeter.rotation.x = -Math.PI / 2;
+    movementPerimeter.position.set(SPAWN_POSITION.x, 0.015, SPAWN_POSITION.z);
+    movementPerimeter.renderOrder = 999;
+    scene.add(movementPerimeter);
+
     const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 1000);
     const renderer = new THREE.WebGLRenderer({ alpha: true });
     renderer.setClearColor(0x000000, 1);
@@ -330,6 +346,12 @@
           xrMovementCenter = new THREE.Vector3(viewerPosition.x, viewerPosition.y, viewerPosition.z);
           xrMovementStart = localFrame.position.clone();
           xrMovementRotation = localFrame.quaternion.clone();
+          const centerOffset = xrMovementCenter.clone().applyQuaternion(xrMovementRotation);
+          movementPerimeter.position.set(
+            xrMovementStart.x + centerOffset.x,
+            xrMovementStart.y + centerOffset.y - SPAWN_POSITION.y + 0.015,
+            xrMovementStart.z + centerOffset.z
+          );
           return;
         }
 
@@ -349,6 +371,7 @@
       xrMovementCenter = null;
       xrMovementStart = null;
       xrMovementRotation = null;
+      movementPerimeter.position.set(SPAWN_POSITION.x, 0.015, SPAWN_POSITION.z);
       if (!xr.session) {
         const offsetX = localFrame.position.x - SPAWN_POSITION.x;
         const offsetZ = localFrame.position.z - SPAWN_POSITION.z;
