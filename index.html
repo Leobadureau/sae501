@@ -276,7 +276,7 @@
       const betaDifference = ((event.beta - referenceBeta + 180) % 360 + 360) % 360 - 180;
       movementInput.set(
         tiltToInput(event.gamma - referenceGamma),
-        tiltToInput(betaDifference)
+        tiltToInput(-betaDifference)
       );
     }
 
