@@ -15,38 +15,38 @@
       touch-action: none;
     }
 
-    #mobile-movement {
+    #motion-control {
       position: fixed;
       z-index: 10;
       left: max(20px, env(safe-area-inset-left));
       bottom: max(20px, env(safe-area-inset-bottom));
       display: none;
-      width: 120px;
-      height: 120px;
-      touch-action: none;
-      user-select: none;
     }
 
-    #movement-joystick {
-      position: absolute;
-      inset: 0;
-      border: 1px solid rgba(255, 255, 255, 0.45);
-      border-radius: 50%;
-      background: rgba(12, 20, 24, 0.38);
-      touch-action: none;
+    #motion-button {
+      padding: 12px 16px;
+      border: 1px solid rgba(255, 255, 255, 0.65);
+      border-radius: 6px;
+      background: rgba(12, 20, 24, 0.78);
+      color: white;
+      font: 600 15px sans-serif;
+      touch-action: manipulation;
     }
 
-    #movement-knob {
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      width: 48px;
-      height: 48px;
-      border: 1px solid rgba(255, 255, 255, 0.8);
-      border-radius: 50%;
-      background: rgba(125, 207, 190, 0.85);
-      transform: translate(-50%, -50%);
-      pointer-events: none;
+    #motion-status {
+      position: fixed;
+      z-index: 10;
+      left: max(20px, env(safe-area-inset-left));
+      bottom: max(72px, calc(env(safe-area-inset-bottom) + 72px));
+      max-width: 240px;
+      margin: 0;
+      color: white;
+      font: 14px sans-serif;
+      text-shadow: 0 1px 3px black;
+    }
+
+    #motion-status[hidden] {
+      display: none;
     }
 
     #vr-button {
@@ -81,7 +81,7 @@
     }
 
     @media (max-width: 760px) {
-      #mobile-movement {
+      #motion-control {
         display: block;
       }
     }
@@ -99,11 +99,10 @@
       }
     }
   </script>
-  <div id="mobile-movement" aria-label="Déplacement">
-    <button id="movement-joystick" type="button" aria-label="Joystick de déplacement">
-      <span id="movement-knob"></span>
-    </button>
+  <div id="motion-control">
+    <button id="motion-button" type="button">Activer le mouvement</button>
   </div>
+  <p id="motion-status" role="status" hidden></p>
   <button id="vr-button" type="button" hidden>Entrer en VR</button>
   <p id="xr-status" role="status" hidden></p>
   <script src="https://cdn.jsdelivr.net/npm/stats.js@0.17.0/build/stats.min.js"></script>
@@ -248,42 +247,80 @@
     controls.pointerControls.rotateSpeed *= 2.0;
     controls.pointerControls.slideSpeed *= 0.75;
 
-    const movementJoystick = document.getElementById("movement-joystick");
-    const movementKnob = document.getElementById("movement-knob");
+    const motionButton = document.getElementById("motion-button");
+    const motionStatus = document.getElementById("motion-status");
     const movementInput = new THREE.Vector2();
-    const joystickRadius = 42;
-    let joystickPointerId = null;
+    let motionEnabled = false;
+    let referenceBeta = null;
+    let referenceGamma = null;
+    let hasOrientationData = false;
+    let sensorTimeoutId;
 
-    function updateJoystick(event) {
-      const bounds = movementJoystick.getBoundingClientRect();
-      const offsetX = event.clientX - (bounds.left + bounds.width / 2);
-      const offsetY = event.clientY - (bounds.top + bounds.height / 2);
-      const distance = Math.hypot(offsetX, offsetY);
-      const strength = Math.min(distance / joystickRadius, 1);
-      if (distance > 0) {
-        movementInput.set(offsetX / distance * strength, offsetY / distance * strength);
-      } else {
-        movementInput.set(0, 0);
+    function tiltToInput(degrees) {
+      const deadZone = 5;
+      const maximumTilt = 25;
+      const activeTilt = Math.sign(degrees) * Math.max(0, Math.abs(degrees) - deadZone);
+      return THREE.MathUtils.clamp(activeTilt / (maximumTilt - deadZone), -1, 1);
+    }
+
+    function updateDeviceOrientation(event) {
+      if (!Number.isFinite(event.beta) || !Number.isFinite(event.gamma)) return;
+      if (!hasOrientationData) {
+        referenceBeta = event.beta;
+        referenceGamma = event.gamma;
+        hasOrientationData = true;
+        motionStatus.textContent = "Incline le téléphone pour te déplacer.";
+        return;
       }
-      movementKnob.style.transform = `translate(calc(-50% + ${movementInput.x * joystickRadius}px), calc(-50% + ${movementInput.y * joystickRadius}px))`;
+
+      const betaDifference = ((event.beta - referenceBeta + 180) % 360 + 360) % 360 - 180;
+      movementInput.set(
+        tiltToInput(event.gamma - referenceGamma),
+        tiltToInput(betaDifference)
+      );
     }
 
-    movementJoystick.addEventListener("pointerdown", (event) => {
-      joystickPointerId = event.pointerId;
-      movementJoystick.setPointerCapture(event.pointerId);
-      updateJoystick(event);
+    motionButton.addEventListener("click", async () => {
+      if (motionEnabled) {
+        motionEnabled = false;
+        window.removeEventListener("deviceorientation", updateDeviceOrientation, true);
+        clearTimeout(sensorTimeoutId);
+        movementInput.set(0, 0);
+        motionButton.textContent = "Activer le mouvement";
+        motionStatus.hidden = true;
+        return;
+      }
+
+      const orientationEvent = window.DeviceOrientationEvent;
+      if (!window.isSecureContext || !orientationEvent) {
+        motionStatus.textContent = "Capteurs indisponibles : ouvre la page en HTTPS sur un téléphone compatible.";
+        motionStatus.hidden = false;
+        return;
+      }
+
+      try {
+        if (typeof orientationEvent.requestPermission === "function") {
+          const permission = await orientationEvent.requestPermission();
+          if (permission !== "granted") throw new Error("Permission refusée");
+        }
+
+        motionEnabled = true;
+        referenceBeta = null;
+        referenceGamma = null;
+        hasOrientationData = false;
+        movementInput.set(0, 0);
+        motionButton.textContent = "Désactiver le mouvement";
+        motionStatus.textContent = "Garde le téléphone immobile pour le calibrer.";
+        motionStatus.hidden = false;
+        window.addEventListener("deviceorientation", updateDeviceOrientation, true);
+        sensorTimeoutId = setTimeout(() => {
+          if (!hasOrientationData) motionStatus.textContent = "Aucun capteur d’orientation détecté.";
+        }, 2500);
+      } catch (error) {
+        motionStatus.textContent = "Autorise l’accès aux capteurs pour activer le mouvement.";
+        motionStatus.hidden = false;
+      }
     });
-    movementJoystick.addEventListener("pointermove", (event) => {
-      if (event.pointerId === joystickPointerId) updateJoystick(event);
-    });
-    function releaseJoystick(event) {
-      if (event.pointerId !== joystickPointerId) return;
-      joystickPointerId = null;
-      movementInput.set(0, 0);
-      movementKnob.style.transform = "translate(-50%, -50%)";
-    }
-    movementJoystick.addEventListener("pointerup", releaseJoystick);
-    movementJoystick.addEventListener("pointercancel", releaseJoystick);
 
     function updateMovement(deltaTime) {
       if (!xr.session) {
