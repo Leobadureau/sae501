@@ -315,18 +315,51 @@
       }
     });
 
-    function updateMovement() {
-      if (xr.session) return;
+    let xrMovementCenter = null;
+    let xrMovementStart = null;
+    let xrMovementRotation = null;
 
-      const offsetX = localFrame.position.x - SPAWN_POSITION.x;
-      const offsetZ = localFrame.position.z - SPAWN_POSITION.z;
-      const distance = Math.hypot(offsetX, offsetZ);
-      if (distance > MOVEMENT_RADIUS) {
-        const scale = MOVEMENT_RADIUS / distance;
-        localFrame.position.x = SPAWN_POSITION.x + offsetX * scale;
-        localFrame.position.z = SPAWN_POSITION.z + offsetZ * scale;
+    function updateMovement(xrFrame) {
+      if (xr.session && xr.mode === "immersive-ar") {
+        const referenceSpace = renderer.xr.getReferenceSpace();
+        const viewerPose = referenceSpace && xrFrame?.getViewerPose(referenceSpace);
+        if (!viewerPose) return;
+
+        const viewerPosition = viewerPose.transform.position;
+        if (!xrMovementCenter) {
+          xrMovementCenter = new THREE.Vector3(viewerPosition.x, viewerPosition.y, viewerPosition.z);
+          xrMovementStart = localFrame.position.clone();
+          xrMovementRotation = localFrame.quaternion.clone();
+          return;
+        }
+
+        const offsetX = viewerPosition.x - xrMovementCenter.x;
+        const offsetZ = viewerPosition.z - xrMovementCenter.z;
+        const distance = Math.hypot(offsetX, offsetZ);
+        const scale = distance > MOVEMENT_RADIUS ? MOVEMENT_RADIUS / distance : 1;
+        const correction = new THREE.Vector3(
+          offsetX * scale - offsetX,
+          0,
+          offsetZ * scale - offsetZ
+        ).applyQuaternion(xrMovementRotation);
+        localFrame.position.copy(xrMovementStart).add(correction);
+        return;
       }
-      localFrame.position.y = SPAWN_POSITION.y;
+
+      xrMovementCenter = null;
+      xrMovementStart = null;
+      xrMovementRotation = null;
+      if (!xr.session) {
+        const offsetX = localFrame.position.x - SPAWN_POSITION.x;
+        const offsetZ = localFrame.position.z - SPAWN_POSITION.z;
+        const distance = Math.hypot(offsetX, offsetZ);
+        if (distance > MOVEMENT_RADIUS) {
+          const scale = MOVEMENT_RADIUS / distance;
+          localFrame.position.x = SPAWN_POSITION.x + offsetX * scale;
+          localFrame.position.z = SPAWN_POSITION.z + offsetZ * scale;
+        }
+        localFrame.position.y = SPAWN_POSITION.y;
+      }
     }
 
     const xrButton = document.getElementById("vr-button");
@@ -366,6 +399,9 @@
         renderEnabled = true;
         lastMoved = performance.now();
         renderer.setClearAlpha(1);
+        xrMovementCenter = null;
+        xrMovementStart = null;
+        xrMovementRotation = null;
         xrButton.textContent = "Entrer en AR";
         console.log("Exit XR");
       },
@@ -405,7 +441,7 @@
 
       xr.updateControllers(camera);
       controls.update(localFrame, camera);
-      updateMovement();
+      updateMovement(xrFrame);
 
       const now = performance.now();
       const dir = localFrame.getWorldDirection(new THREE.Vector3());
