@@ -1,0 +1,30 @@
+{
+  "splats": [
+    {
+      "filename": "corsican-mountain-clearing-night.spz",
+      "transform": {
+        "translation": [
+          0,
+          1.1666971445083618,
+          0
+        ],
+        "rotation": [
+          180,
+          0,
+          0
+        ],
+        "quaternion": [
+          1,
+          0,
+          0,
+          6.123233995736766e-17
+        ],
+        "scale": 2.0327539443969727
+      }
+    }
+  ],
+  "metadata": {
+    "exportTimestamp": "2026-09-26T13:07:53.740Z",
+    "spzExportVersion": 2
+  }
+}
