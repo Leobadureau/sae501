@@ -9,6 +9,7 @@
     body {
       margin: 0;
       overflow: hidden;
+      background: #05090b;
     }
 
     canvas {
@@ -115,12 +116,13 @@
     const RENDER_TIMEOUT_MS = 5 * 1000;
     const URL_BASE = ".";
     const SPAWN_POSITION = new THREE.Vector3(0, 1.5, -3.9);
-    const MOVEMENT_RADIUS = 4;
+    const MOVEMENT_RADIUS = 2;
 
     const scene = new THREE.Scene();
     // scene.background = new THREE.Color(0.75, 1.0, 1.0);
     const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 1000);
-    const renderer = new THREE.WebGLRenderer();
+    const renderer = new THREE.WebGLRenderer({ alpha: true });
+    renderer.setClearColor(0x000000, 1);
     renderer.setPixelRatio(window.devicePixelRatio);
     renderer.setSize(window.innerWidth, window.innerHeight);
     document.body.appendChild(renderer.domElement);
@@ -309,7 +311,25 @@
       }
     });
 
+    let xrMovementCenter = null;
+
     function updateMovement() {
+      if (xr.session && xr.mode === "immersive-ar") {
+        const viewerPosition = renderer.xr.getCamera(camera).getWorldPosition(new THREE.Vector3());
+        if (!xrMovementCenter) xrMovementCenter = viewerPosition.clone();
+
+        const offsetX = viewerPosition.x - xrMovementCenter.x;
+        const offsetZ = viewerPosition.z - xrMovementCenter.z;
+        const distance = Math.hypot(offsetX, offsetZ);
+        if (distance > MOVEMENT_RADIUS) {
+          const scale = MOVEMENT_RADIUS / distance;
+          localFrame.position.x += xrMovementCenter.x + offsetX * scale - viewerPosition.x;
+          localFrame.position.z += xrMovementCenter.z + offsetZ * scale - viewerPosition.z;
+        }
+        return;
+      }
+
+      xrMovementCenter = null;
       if (!xr.session) {
         const offsetX = localFrame.position.x - SPAWN_POSITION.x;
         const offsetZ = localFrame.position.z - SPAWN_POSITION.z;
@@ -328,7 +348,7 @@
 
     const xr = new SparkXr({
       renderer,
-      mode: "vr",
+      mode: utils.isMobile() ? "arvr" : "vr",
       allowMobileXr: true,
       element: xrButton,
       onMouseLeaveOpacity: 0.5,
@@ -336,14 +356,26 @@
         console.log(`SparkXr initialized: XR ${supported ? "supported" : "not supported"}`);
         xrButton.hidden = !supported;
         xrStatus.hidden = supported;
-        if (!supported) xrStatus.textContent = "VR indisponible : navigateur XR et casque compatibles requis";
+        if (supported) xrButton.textContent = xr.mode === "immersive-ar" ? "Entrer en AR" : "Entrer en VR";
+        if (!supported) xrStatus.textContent = "Suivi de position XR indisponible ici ; le regard gyroscopique reste disponible.";
       },
       onEnterXr: () => {
-        xrButton.textContent = "Quitter la VR";
+        if (motionEnabled) {
+          motionEnabled = false;
+          window.removeEventListener("deviceorientation", updateDeviceOrientation, true);
+          clearTimeout(sensorTimeoutId);
+          controls.pointerControls.enable = true;
+          motionButton.textContent = "Activer le regard gyroscopique";
+          motionStatus.hidden = true;
+        }
+        renderer.setClearAlpha(xr.mode === "immersive-ar" ? 0 : 1);
+        xrButton.textContent = xr.mode === "immersive-ar" ? "Quitter AR" : "Quitter VR";
         console.log("Enter XR");
       },
       onExitXr: () => {
-        xrButton.textContent = "Entrer en VR";
+        renderer.setClearAlpha(1);
+        xrMovementCenter = null;
+        xrButton.textContent = xr.mode === "immersive-ar" ? "Entrer en AR" : "Entrer en VR";
         console.log("Exit XR");
       },
       // enableHands: true,

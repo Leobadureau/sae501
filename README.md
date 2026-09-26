@@ -23,7 +23,7 @@ Then open [http://localhost:8000](http://localhost:8000) in your browser.
 ## Controls
 
 - On a phone, drag the scene or tap **Activer le regard gyroscopique**. Hold the phone facing the starting view to calibrate, then turn around to look around the scene.
-- Walking through the scene requires positional tracking from a compatible WebXR AR device or 6DoF headset. Movement controls are limited to a 4-unit radius around the starting point.
+- On supported phones, **Enter en AR** uses camera-based positional tracking to walk around the scene, within a 2-meter radius. WebXR AR support depends on the phone and browser; the gyroscope remains available for looking around when AR is unavailable.
 - VR is available only when the browser and headset support immersive WebXR. Use a compatible browser over HTTPS, such as the GitHub Pages site.
 
 ### Using Node.js
