@@ -100,7 +100,7 @@
     }
   </script>
   <div id="motion-control">
-    <button id="motion-button" type="button">Activer le mouvement</button>
+    <button id="motion-button" type="button">Activer le regard gyroscopique</button>
   </div>
   <p id="motion-status" role="status" hidden></p>
   <button id="vr-button" type="button" hidden>Entrer en VR</button>
@@ -116,7 +116,6 @@
     const URL_BASE = ".";
     const SPAWN_POSITION = new THREE.Vector3(0, 1.5, -3.9);
     const MOVEMENT_RADIUS = 4;
-    const MOVEMENT_SPEED = 2;
 
     const scene = new THREE.Scene();
     // scene.background = new THREE.Color(0.75, 1.0, 1.0);
@@ -249,35 +248,24 @@
 
     const motionButton = document.getElementById("motion-button");
     const motionStatus = document.getElementById("motion-status");
-    const movementInput = new THREE.Vector2();
     let motionEnabled = false;
-    let referenceBeta = null;
-    let referenceGamma = null;
+    let referenceAlpha = null;
+    let referenceYaw = 0;
     let hasOrientationData = false;
     let sensorTimeoutId;
 
-    function tiltToInput(degrees) {
-      const deadZone = 5;
-      const maximumTilt = 25;
-      const activeTilt = Math.sign(degrees) * Math.max(0, Math.abs(degrees) - deadZone);
-      return THREE.MathUtils.clamp(activeTilt / (maximumTilt - deadZone), -1, 1);
-    }
-
     function updateDeviceOrientation(event) {
-      if (!Number.isFinite(event.beta) || !Number.isFinite(event.gamma)) return;
+      if (!Number.isFinite(event.alpha)) return;
       if (!hasOrientationData) {
-        referenceBeta = event.beta;
-        referenceGamma = event.gamma;
+        referenceAlpha = event.alpha;
+        referenceYaw = localFrame.rotation.y;
         hasOrientationData = true;
-        motionStatus.textContent = "Incline le téléphone pour te déplacer.";
+        motionStatus.textContent = "Tourne sur toi-même pour regarder autour de toi.";
         return;
       }
 
-      const betaDifference = ((event.beta - referenceBeta + 180) % 360 + 360) % 360 - 180;
-      movementInput.set(
-        tiltToInput(event.gamma - referenceGamma),
-        tiltToInput(-betaDifference)
-      );
+      const alphaDifference = ((event.alpha - referenceAlpha + 180) % 360 + 360) % 360 - 180;
+      localFrame.rotation.y = referenceYaw - THREE.MathUtils.degToRad(alphaDifference);
     }
 
     motionButton.addEventListener("click", async () => {
@@ -285,15 +273,15 @@
         motionEnabled = false;
         window.removeEventListener("deviceorientation", updateDeviceOrientation, true);
         clearTimeout(sensorTimeoutId);
-        movementInput.set(0, 0);
-        motionButton.textContent = "Activer le mouvement";
+        controls.pointerControls.enable = true;
+        motionButton.textContent = "Activer le regard gyroscopique";
         motionStatus.hidden = true;
         return;
       }
 
       const orientationEvent = window.DeviceOrientationEvent;
       if (!window.isSecureContext || !orientationEvent) {
-        motionStatus.textContent = "Capteurs indisponibles : ouvre la page en HTTPS sur un téléphone compatible.";
+        motionStatus.textContent = "Capteur de rotation indisponible sur ce navigateur.";
         motionStatus.hidden = false;
         return;
       }
@@ -305,12 +293,11 @@
         }
 
         motionEnabled = true;
-        referenceBeta = null;
-        referenceGamma = null;
+        referenceAlpha = null;
         hasOrientationData = false;
-        movementInput.set(0, 0);
-        motionButton.textContent = "Désactiver le mouvement";
-        motionStatus.textContent = "Garde le téléphone immobile pour le calibrer.";
+        controls.pointerControls.enable = false;
+        motionButton.textContent = "Désactiver le regard gyroscopique";
+        motionStatus.textContent = "Garde le téléphone face à la vue souhaitée pour le calibrer.";
         motionStatus.hidden = false;
         window.addEventListener("deviceorientation", updateDeviceOrientation, true);
         sensorTimeoutId = setTimeout(() => {
@@ -322,13 +309,8 @@
       }
     });
 
-    function updateMovement(deltaTime) {
+    function updateMovement() {
       if (!xr.session) {
-        const yaw = new THREE.Euler().setFromQuaternion(localFrame.quaternion, "YXZ").y;
-        const movement = new THREE.Vector3(movementInput.x, 0, -movementInput.y);
-        movement.applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
-        localFrame.position.addScaledVector(movement, deltaTime / 1000 * MOVEMENT_SPEED);
-
         const offsetX = localFrame.position.x - SPAWN_POSITION.x;
         const offsetZ = localFrame.position.z - SPAWN_POSITION.z;
         const distance = Math.hypot(offsetX, offsetZ);
@@ -400,7 +382,7 @@
 
       xr.updateControllers(camera);
       controls.update(localFrame, camera);
-      updateMovement(deltaTime);
+      updateMovement();
 
       const now = performance.now();
       const dir = localFrame.getWorldDirection(new THREE.Vector3());
