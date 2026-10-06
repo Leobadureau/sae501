@@ -78,7 +78,8 @@ function setWorldVisible(visible) {
 
 async function setupMarkerDetection() {
   if (!navigator.mediaDevices?.getUserMedia) {
-    setWorldVisible(true);
+    markerOverlay.textContent = "Caméra indisponible. Ouvrez cette page en HTTPS et autorisez la caméra.";
+    setWorldVisible(false);
     return;
   }
 
@@ -119,8 +120,9 @@ async function setupMarkerDetection() {
     setWorldVisible(false);
     console.log("Marker detection ready using SCANNE.png");
   } catch (error) {
-    console.warn("Marker detection unavailable, showing world by default.", error);
-    setWorldVisible(true);
+    console.warn("Marker detection unavailable; keeping world hidden.", error);
+    markerOverlay.textContent = "Autorisez l’accès à la caméra pour scanner SCANNE.png.";
+    setWorldVisible(false);
   }
 }
 
