@@ -51,7 +51,7 @@ const markerDetection = {
   canvas: document.createElement("canvas"),
   context: null,
   markerTemplate: null,
-  threshold: 0.8,
+  threshold: 0.72,
 };
 
 function createGrayTemplate(imageData) {
@@ -66,6 +66,19 @@ function createGrayTemplate(imageData) {
   return gray;
 }
 
+function prepareMarkerTemplate(imageData) {
+  const values = createGrayTemplate(imageData);
+  const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
+  let normSquared = 0;
+
+  for (let index = 0; index < values.length; index += 1) {
+    values[index] -= mean;
+    normSquared += values[index] * values[index];
+  }
+
+  return { values, normSquared };
+}
+
 function updateMarkerOverlay(visible) {
   if (!markerOverlay) return;
   markerOverlay.classList.toggle("is-visible", !visible);
@@ -73,6 +86,9 @@ function updateMarkerOverlay(visible) {
 
 function setWorldVisible(visible) {
   renderer.domElement.style.display = visible ? "block" : "none";
+  if (markerDetection.video) {
+    markerDetection.video.style.display = visible ? "none" : "block";
+  }
   updateMarkerOverlay(visible);
 }
 
@@ -90,15 +106,16 @@ async function setupMarkerDetection() {
     await markerImage.decode();
 
     const markerCanvas = document.createElement("canvas");
-    markerCanvas.width = 320;
-    markerCanvas.height = 320;
+    markerCanvas.width = 24;
+    markerCanvas.height = 24;
     const markerContext = markerCanvas.getContext("2d", { willReadFrequently: true });
     markerContext.drawImage(markerImage, 0, 0, markerCanvas.width, markerCanvas.height);
-    markerDetection.markerTemplate = createGrayTemplate(
+    markerDetection.markerTemplate = prepareMarkerTemplate(
       markerContext.getImageData(0, 0, markerCanvas.width, markerCanvas.height)
     );
 
     const video = document.createElement("video");
+    video.className = "marker-camera";
     video.playsInline = true;
     video.autoplay = true;
     video.muted = true;
@@ -108,13 +125,14 @@ async function setupMarkerDetection() {
       audio: false,
     });
 
-    video.srcObject = stream;
-    await video.play();
-
     markerDetection.video = video;
     markerDetection.stream = stream;
-    markerDetection.canvas.width = 320;
-    markerDetection.canvas.height = 240;
+    video.srcObject = stream;
+    document.body.appendChild(video);
+    await video.play();
+
+    markerDetection.canvas.width = 160;
+    markerDetection.canvas.height = 120;
     markerDetection.context = markerDetection.canvas.getContext("2d", { willReadFrequently: true });
     markerDetection.enabled = true;
     setWorldVisible(false);
@@ -127,27 +145,50 @@ async function setupMarkerDetection() {
 }
 
 function detectMarkerFrame() {
-  if (!markerDetection.enabled || !markerDetection.video || !markerDetection.markerTemplate) {
-    return true;
-  }
+  if (!markerDetection.enabled || !markerDetection.video || !markerDetection.markerTemplate) return false;
 
-  const { canvas, context, video, markerTemplate } = markerDetection;
+  const { canvas, context, video, markerTemplate, threshold } = markerDetection;
   const frameWidth = canvas.width;
   const frameHeight = canvas.height;
 
   context.drawImage(video, 0, 0, frameWidth, frameHeight);
-  const imageData = context.getImageData(0, 0, frameWidth, frameHeight);
-  const frameTemplate = createGrayTemplate(imageData);
+  const frame = createGrayTemplate(context.getImageData(0, 0, frameWidth, frameHeight));
+  const { values, normSquared } = markerTemplate;
+  const templateSize = 24;
+  const sampleCount = templateSize * templateSize;
+  let bestSimilarity = 0;
 
-  let totalError = 0;
-  const maxError = frameTemplate.length * 255;
+  for (let side = 18; side <= 96; side += 6) {
+    if (side > frameWidth || side > frameHeight) continue;
 
-  for (let i = 0; i < frameTemplate.length; i += 1) {
-    totalError += Math.abs(frameTemplate[i] - markerTemplate[i % markerTemplate.length]);
+    for (let top = 0; top <= frameHeight - side; top += 6) {
+      for (let left = 0; left <= frameWidth - side; left += 6) {
+        let sum = 0;
+        let sumSquared = 0;
+        let dot = 0;
+        let index = 0;
+
+        for (let row = 0; row < templateSize; row += 1) {
+          const y = top + Math.floor(((row + 0.5) * side) / templateSize);
+          for (let column = 0; column < templateSize; column += 1) {
+            const x = left + Math.floor(((column + 0.5) * side) / templateSize);
+            const pixel = frame[y * frameWidth + x];
+            sum += pixel;
+            sumSquared += pixel * pixel;
+            dot += pixel * values[index++];
+          }
+        }
+
+        const patchNormSquared = sumSquared - (sum * sum) / sampleCount;
+        if (patchNormSquared === 0) continue;
+        const similarity = dot / Math.sqrt(patchNormSquared * normSquared);
+        bestSimilarity = Math.max(bestSimilarity, similarity);
+        if (bestSimilarity >= threshold) return true;
+      }
+    }
   }
 
-  const similarity = 1 - totalError / maxError;
-  return similarity >= markerDetection.threshold;
+  return false;
 }
 
 const markerDetectionReady = setupMarkerDetection();
@@ -415,6 +456,7 @@ const xr = new SparkXr({
 let lastTime = 0;
 let rotation = 0;
 let xrTime = 0;
+let lastMarkerCheck = 0;
 
 document.addEventListener("keydown", (event) => {
   if (event.key === "\\") {
@@ -428,11 +470,9 @@ renderer.setAnimationLoop(function animate(time, xrFrame) {
   const deltaTime = time - (lastTime || time);
   lastTime = time;
 
-  if (markerDetectionReady) {
-    const markerFound = detectMarkerFrame();
-    if (markerDetection.enabled) {
-      setWorldVisible(markerFound);
-    }
+  if (markerDetection.enabled && time - lastMarkerCheck >= 150) {
+    lastMarkerCheck = time;
+    setWorldVisible(detectMarkerFrame());
   }
 
   xr.updateControllers(camera);
