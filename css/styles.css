@@ -1,0 +1,116 @@
+:root {
+  --bg-color: #05090b;
+  --panel-bg: rgba(12, 20, 24, 0.78);
+  --panel-border: rgba(255, 255, 255, 0.65);
+  --text-color: #ffffff;
+  --shadow-color: rgba(0, 0, 0, 0.7);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg-color);
+  color: var(--text-color);
+  font-family: sans-serif;
+}
+
+body {
+  position: relative;
+}
+
+canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+
+.hud {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.ui-panel {
+  position: absolute;
+  left: max(20px, env(safe-area-inset-left));
+  bottom: max(20px, env(safe-area-inset-bottom));
+  display: none;
+  pointer-events: auto;
+}
+
+.ui-panel[hidden] {
+  display: none;
+}
+
+.motion-toggle {
+  padding: 12px 16px;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  background: var(--panel-bg);
+  color: var(--text-color);
+  font: 600 15px sans-serif;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.status {
+  position: absolute;
+  left: max(20px, env(safe-area-inset-left));
+  bottom: max(72px, calc(env(safe-area-inset-bottom) + 72px));
+  max-width: 240px;
+  margin: 0;
+  color: var(--text-color);
+  font: 14px sans-serif;
+  text-shadow: 0 1px 3px var(--shadow-color);
+}
+
+.status[hidden] {
+  display: none;
+}
+
+.xr-button {
+  position: absolute;
+  right: max(20px, env(safe-area-inset-right));
+  bottom: max(20px, env(safe-area-inset-bottom));
+  padding: 12px 16px;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  background: rgba(12, 20, 24, 0.75);
+  color: var(--text-color);
+  font: 600 15px sans-serif;
+  cursor: pointer;
+  touch-action: manipulation;
+  pointer-events: auto;
+}
+
+.xr-button[hidden],
+.xr-status[hidden] {
+  display: none;
+}
+
+.xr-status {
+  position: absolute;
+  right: max(20px, env(safe-area-inset-right));
+  bottom: max(72px, calc(env(safe-area-inset-bottom) + 72px));
+  max-width: 240px;
+  margin: 0;
+  color: var(--text-color);
+  font: 14px sans-serif;
+  text-align: right;
+  text-shadow: 0 1px 3px var(--shadow-color);
+}
+
+@media (max-width: 760px) {
+  .ui-panel {
+    display: block;
+  }
+}
