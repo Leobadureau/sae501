@@ -30,6 +30,7 @@ renderer.setClearColor(0x000000, 1);
 renderer.setPixelRatio(window.devicePixelRatio);
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
+renderer.domElement.style.display = "none";
 
 const localFrame = new THREE.Group();
 scene.add(localFrame);
@@ -41,6 +42,113 @@ const spark = new SparkRenderer({
 });
 scene.add(spark);
 localFrame.add(camera);
+
+const markerOverlay = document.getElementById("marker-overlay");
+const markerDetection = {
+  enabled: false,
+  video: null,
+  stream: null,
+  canvas: document.createElement("canvas"),
+  context: null,
+  markerTemplate: null,
+  threshold: 0.8,
+};
+
+function createGrayTemplate(imageData) {
+  const pixels = imageData.data;
+  const gray = new Float32Array(imageData.width * imageData.height);
+  let index = 0;
+
+  for (let i = 0; i < pixels.length; i += 4) {
+    gray[index++] = 0.299 * pixels[i] + 0.587 * pixels[i + 1] + 0.114 * pixels[i + 2];
+  }
+
+  return gray;
+}
+
+function updateMarkerOverlay(visible) {
+  if (!markerOverlay) return;
+  markerOverlay.classList.toggle("is-visible", !visible);
+}
+
+function setWorldVisible(visible) {
+  renderer.domElement.style.display = visible ? "block" : "none";
+  updateMarkerOverlay(visible);
+}
+
+async function setupMarkerDetection() {
+  if (!navigator.mediaDevices?.getUserMedia) {
+    setWorldVisible(true);
+    return;
+  }
+
+  try {
+    const markerImage = new Image();
+    markerImage.crossOrigin = "anonymous";
+    markerImage.src = "./SCANNE.png";
+    await markerImage.decode();
+
+    const markerCanvas = document.createElement("canvas");
+    markerCanvas.width = 320;
+    markerCanvas.height = 320;
+    const markerContext = markerCanvas.getContext("2d", { willReadFrequently: true });
+    markerContext.drawImage(markerImage, 0, 0, markerCanvas.width, markerCanvas.height);
+    markerDetection.markerTemplate = createGrayTemplate(
+      markerContext.getImageData(0, 0, markerCanvas.width, markerCanvas.height)
+    );
+
+    const video = document.createElement("video");
+    video.playsInline = true;
+    video.autoplay = true;
+    video.muted = true;
+
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: "environment" },
+      audio: false,
+    });
+
+    video.srcObject = stream;
+    await video.play();
+
+    markerDetection.video = video;
+    markerDetection.stream = stream;
+    markerDetection.canvas.width = 320;
+    markerDetection.canvas.height = 240;
+    markerDetection.context = markerDetection.canvas.getContext("2d", { willReadFrequently: true });
+    markerDetection.enabled = true;
+    setWorldVisible(false);
+    console.log("Marker detection ready using SCANNE.png");
+  } catch (error) {
+    console.warn("Marker detection unavailable, showing world by default.", error);
+    setWorldVisible(true);
+  }
+}
+
+function detectMarkerFrame() {
+  if (!markerDetection.enabled || !markerDetection.video || !markerDetection.markerTemplate) {
+    return true;
+  }
+
+  const { canvas, context, video, markerTemplate } = markerDetection;
+  const frameWidth = canvas.width;
+  const frameHeight = canvas.height;
+
+  context.drawImage(video, 0, 0, frameWidth, frameHeight);
+  const imageData = context.getImageData(0, 0, frameWidth, frameHeight);
+  const frameTemplate = createGrayTemplate(imageData);
+
+  let totalError = 0;
+  const maxError = frameTemplate.length * 255;
+
+  for (let i = 0; i < frameTemplate.length; i += 1) {
+    totalError += Math.abs(frameTemplate[i] - markerTemplate[i % markerTemplate.length]);
+  }
+
+  const similarity = 1 - totalError / maxError;
+  return similarity >= markerDetection.threshold;
+}
+
+const markerDetectionReady = setupMarkerDetection();
 
 const sceneJson = await fetch(`${URL_BASE}/scene.json`).then((response) => response.json());
 const splats = sceneJson.splats ?? [];
@@ -318,6 +426,13 @@ renderer.setAnimationLoop(function animate(time, xrFrame) {
   const deltaTime = time - (lastTime || time);
   lastTime = time;
 
+  if (markerDetectionReady) {
+    const markerFound = detectMarkerFrame();
+    if (markerDetection.enabled) {
+      setWorldVisible(markerFound);
+    }
+  }
+
   xr.updateControllers(camera);
   controls.update(localFrame, camera);
   updateMovement(xrFrame);
@@ -334,7 +449,13 @@ renderer.setAnimationLoop(function animate(time, xrFrame) {
     renderEnabled = false;
   }
 
-  if (renderEnabled || xr.session) {
+  if ((renderEnabled || xr.session) && renderer.domElement.style.display !== "none") {
     renderer.render(scene, camera);
+  }
+});
+
+window.addEventListener("beforeunload", () => {
+  if (markerDetection.stream) {
+    markerDetection.stream.getTracks().forEach((track) => track.stop());
   }
 });
