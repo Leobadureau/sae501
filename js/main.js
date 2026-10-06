@@ -27,7 +27,7 @@ scene.add(movementPerimeter);
 
 const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 1000);
 const renderer = new THREE.WebGLRenderer({ alpha: true });
-renderer.setClearColor(0x000000, 1);
+renderer.setClearColor(0x000000, 0);
 renderer.setPixelRatio(window.devicePixelRatio);
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
@@ -98,34 +98,39 @@ function updateMarkerOverlay(visible) {
 function setWorldVisible(visible) {
   renderer.domElement.style.display = visible ? "block" : "none";
   if (markerDetection.video) {
-    markerDetection.video.style.display = visible ? "none" : "block";
+    markerDetection.video.style.display = "block";
   }
   updateMarkerOverlay(visible);
 }
 
 async function setupMarkerDetection() {
-  if (markerDetection.locked) return;
-
   if (!navigator.mediaDevices?.getUserMedia) {
     markerOverlay.textContent = "Caméra indisponible. Ouvrez cette page en HTTPS et autorisez la caméra.";
-    setWorldVisible(false);
+    if (markerDetection.locked) {
+      renderer.setClearAlpha(1);
+      setWorldVisible(true);
+    } else {
+      setWorldVisible(false);
+    }
     return;
   }
 
   try {
-    const markerImage = new Image();
-    markerImage.crossOrigin = "anonymous";
-    markerImage.src = "./SCANNE.png";
-    await markerImage.decode();
+    if (!markerDetection.locked) {
+      const markerImage = new Image();
+      markerImage.crossOrigin = "anonymous";
+      markerImage.src = "./SCANNE.png";
+      await markerImage.decode();
 
-    const markerCanvas = document.createElement("canvas");
-    markerCanvas.width = 24;
-    markerCanvas.height = 24;
-    const markerContext = markerCanvas.getContext("2d", { willReadFrequently: true });
-    markerContext.drawImage(markerImage, 0, 0, markerCanvas.width, markerCanvas.height);
-    markerDetection.markerTemplate = prepareMarkerTemplate(
-      markerContext.getImageData(0, 0, markerCanvas.width, markerCanvas.height)
-    );
+      const markerCanvas = document.createElement("canvas");
+      markerCanvas.width = 24;
+      markerCanvas.height = 24;
+      const markerContext = markerCanvas.getContext("2d", { willReadFrequently: true });
+      markerContext.drawImage(markerImage, 0, 0, markerCanvas.width, markerCanvas.height);
+      markerDetection.markerTemplate = prepareMarkerTemplate(
+        markerContext.getImageData(0, 0, markerCanvas.width, markerCanvas.height)
+      );
+    }
 
     const video = document.createElement("video");
     video.className = "marker-camera";
@@ -150,13 +155,19 @@ async function setupMarkerDetection() {
     markerDetection.canvas.width = Math.round(videoWidth * frameScale);
     markerDetection.canvas.height = Math.round(videoHeight * frameScale);
     markerDetection.context = markerDetection.canvas.getContext("2d", { willReadFrequently: true });
-    markerDetection.enabled = true;
-    setWorldVisible(false);
-    console.log("Marker detection ready using SCANNE.png");
+    markerDetection.enabled = !markerDetection.locked;
+    renderer.setClearAlpha(markerDetection.locked ? 0 : 1);
+    setWorldVisible(markerDetection.locked);
+    if (!markerDetection.locked) console.log("Marker detection ready using SCANNE.png");
   } catch (error) {
     console.warn("Marker detection unavailable; keeping world hidden.", error);
     markerOverlay.textContent = "Autorisez l’accès à la caméra pour scanner SCANNE.png.";
-    setWorldVisible(false);
+    if (markerDetection.locked) {
+      renderer.setClearAlpha(1);
+      setWorldVisible(true);
+    } else {
+      setWorldVisible(false);
+    }
   }
 }
 
@@ -295,7 +306,7 @@ function onWindowResize() {
 window.addEventListener("resize", onWindowResize, false);
 
 let renderEnabled = true;
-let lastMoved = 0;
+let lastMoved = performance.now();
 let lastPos = new THREE.Vector3().setScalar(Number.NEGATIVE_INFINITY);
 let lastDir = new THREE.Vector3();
 
@@ -305,71 +316,6 @@ const controls = new SparkControls({
 controls.pointerControls.reverseRotate = utils.isMobile();
 controls.pointerControls.rotateSpeed *= 2.0;
 controls.pointerControls.slideSpeed *= 0.75;
-
-const motionButton = document.getElementById("motion-button");
-const motionStatus = document.getElementById("motion-status");
-const motionControl = document.getElementById("motion-control");
-motionControl.hidden = !utils.isMobile();
-let motionEnabled = false;
-let referenceAlpha = null;
-let referenceYaw = 0;
-let hasOrientationData = false;
-let sensorTimeoutId;
-
-function updateDeviceOrientation(event) {
-  if (!Number.isFinite(event.alpha)) return;
-  if (!hasOrientationData) {
-    referenceAlpha = event.alpha;
-    referenceYaw = localFrame.rotation.y;
-    hasOrientationData = true;
-    motionStatus.textContent = "Tourne sur toi-même pour regarder autour de toi.";
-    return;
-  }
-
-  const alphaDifference = ((event.alpha - referenceAlpha + 180) % 360 + 360) % 360 - 180;
-  localFrame.rotation.y = referenceYaw - THREE.MathUtils.degToRad(alphaDifference);
-}
-
-motionButton.addEventListener("click", async () => {
-  if (motionEnabled) {
-    motionEnabled = false;
-    window.removeEventListener("deviceorientation", updateDeviceOrientation, true);
-    clearTimeout(sensorTimeoutId);
-    controls.pointerControls.enable = true;
-    motionButton.textContent = "Activer le regard gyroscopique";
-    motionStatus.hidden = true;
-    return;
-  }
-
-  const orientationEvent = window.DeviceOrientationEvent;
-  if (!window.isSecureContext || !orientationEvent) {
-    motionStatus.textContent = "Capteur de rotation indisponible sur ce navigateur.";
-    motionStatus.hidden = false;
-    return;
-  }
-
-  try {
-    if (typeof orientationEvent.requestPermission === "function") {
-      const permission = await orientationEvent.requestPermission();
-      if (permission !== "granted") throw new Error("Permission refusée");
-    }
-
-    motionEnabled = true;
-    referenceAlpha = null;
-    hasOrientationData = false;
-    controls.pointerControls.enable = false;
-    motionButton.textContent = "Désactiver le regard gyroscopique";
-    motionStatus.textContent = "Garde le téléphone face à la vue souhaitée pour le calibrer.";
-    motionStatus.hidden = false;
-    window.addEventListener("deviceorientation", updateDeviceOrientation, true);
-    sensorTimeoutId = setTimeout(() => {
-      if (!hasOrientationData) motionStatus.textContent = "Aucun capteur d’orientation détecté.";
-    }, 2500);
-  } catch (error) {
-    motionStatus.textContent = "Autorise l’accès aux capteurs pour activer le mouvement.";
-    motionStatus.hidden = false;
-  }
-});
 
 function updateMovement() {
   movementPerimeter.position.set(SPAWN_POSITION.x, 0.015, SPAWN_POSITION.z);
@@ -413,19 +359,16 @@ renderer.setAnimationLoop(function animate(time, xrFrame) {
       } catch (error) {
         console.warn("Could not save marker state for the next visit.", error);
       }
-      markerDetection.stream?.getTracks().forEach((track) => track.stop());
-      markerDetection.video?.remove();
-      markerDetection.stream = null;
-      markerDetection.video = null;
+      renderer.setClearAlpha(0);
+      setWorldVisible(true);
     } else {
       setWorldVisible(false);
     }
   }
 
-  if (markerDetection.locked && renderer.domElement.style.display === "none") {
+  if (markerDetection.locked && !renderEnabled) {
     renderEnabled = true;
     lastMoved = performance.now();
-    setWorldVisible(true);
   }
 
   controls.update(localFrame, camera);
