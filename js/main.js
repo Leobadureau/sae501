@@ -6,6 +6,7 @@ const RENDER_TIMEOUT_MS = 5 * 1000;
 const URL_BASE = ".";
 const SPAWN_POSITION = new THREE.Vector3(0, 1.5, -3.9);
 const MOVEMENT_RADIUS = 2;
+const MARKER_SCAN_STORAGE_KEY = "sae501-marker-scanned";
 
 const scene = new THREE.Scene();
 const movementPerimeter = new THREE.Mesh(
@@ -44,8 +45,18 @@ scene.add(spark);
 localFrame.add(camera);
 
 const markerOverlay = document.getElementById("marker-overlay");
+function hasSavedMarkerScan() {
+  try {
+    return localStorage.getItem(MARKER_SCAN_STORAGE_KEY) === "true";
+  } catch (error) {
+    console.warn("Could not read saved marker state.", error);
+    return false;
+  }
+}
+
 const markerDetection = {
   enabled: false,
+  locked: hasSavedMarkerScan(),
   video: null,
   stream: null,
   canvas: document.createElement("canvas"),
@@ -93,6 +104,8 @@ function setWorldVisible(visible) {
 }
 
 async function setupMarkerDetection() {
+  if (markerDetection.locked) return;
+
   if (!navigator.mediaDevices?.getUserMedia) {
     markerOverlay.textContent = "Caméra indisponible. Ouvrez cette page en HTTPS et autorisez la caméra.";
     setWorldVisible(false);
@@ -391,11 +404,28 @@ renderer.setAnimationLoop(function animate(time, xrFrame) {
   if (markerDetection.enabled && time - lastMarkerCheck >= 150) {
     lastMarkerCheck = time;
     const markerFound = detectMarkerFrame();
-    if (markerFound && renderer.domElement.style.display === "none") {
-      renderEnabled = true;
-      lastMoved = performance.now();
+
+    if (markerFound) {
+      markerDetection.locked = true;
+      markerDetection.enabled = false;
+      try {
+        localStorage.setItem(MARKER_SCAN_STORAGE_KEY, "true");
+      } catch (error) {
+        console.warn("Could not save marker state for the next visit.", error);
+      }
+      markerDetection.stream?.getTracks().forEach((track) => track.stop());
+      markerDetection.video?.remove();
+      markerDetection.stream = null;
+      markerDetection.video = null;
+    } else {
+      setWorldVisible(false);
     }
-    setWorldVisible(markerFound);
+  }
+
+  if (markerDetection.locked && renderer.domElement.style.display === "none") {
+    renderEnabled = true;
+    lastMoved = performance.now();
+    setWorldVisible(true);
   }
 
   controls.update(localFrame, camera);
