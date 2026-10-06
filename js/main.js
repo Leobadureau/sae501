@@ -51,7 +51,7 @@ const markerDetection = {
   canvas: document.createElement("canvas"),
   context: null,
   markerTemplate: null,
-  threshold: 0.72,
+  threshold: 0.55,
 };
 
 function createGrayTemplate(imageData) {
@@ -131,8 +131,11 @@ async function setupMarkerDetection() {
     document.body.appendChild(video);
     await video.play();
 
-    markerDetection.canvas.width = 160;
-    markerDetection.canvas.height = 120;
+    const videoWidth = video.videoWidth || 160;
+    const videoHeight = video.videoHeight || 120;
+    const frameScale = 160 / Math.max(videoWidth, videoHeight);
+    markerDetection.canvas.width = Math.round(videoWidth * frameScale);
+    markerDetection.canvas.height = Math.round(videoHeight * frameScale);
     markerDetection.context = markerDetection.canvas.getContext("2d", { willReadFrequently: true });
     markerDetection.enabled = true;
     setWorldVisible(false);
