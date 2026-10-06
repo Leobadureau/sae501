@@ -133,7 +133,7 @@ async function setupMarkerDetection() {
 
     const videoWidth = video.videoWidth || 160;
     const videoHeight = video.videoHeight || 120;
-    const frameScale = 160 / Math.max(videoWidth, videoHeight);
+    const frameScale = 200 / Math.max(videoWidth, videoHeight);
     markerDetection.canvas.width = Math.round(videoWidth * frameScale);
     markerDetection.canvas.height = Math.round(videoHeight * frameScale);
     markerDetection.context = markerDetection.canvas.getContext("2d", { willReadFrequently: true });
@@ -161,11 +161,11 @@ function detectMarkerFrame() {
   const sampleCount = templateSize * templateSize;
   let bestSimilarity = 0;
 
-  for (let side = 18; side <= 96; side += 6) {
+  for (let side = 16; side <= Math.min(frameWidth, frameHeight); side += 8) {
     if (side > frameWidth || side > frameHeight) continue;
 
-    for (let top = 0; top <= frameHeight - side; top += 6) {
-      for (let left = 0; left <= frameWidth - side; left += 6) {
+    for (let top = 0; top <= frameHeight - side; top += 8) {
+      for (let left = 0; left <= frameWidth - side; left += 8) {
         let sum = 0;
         let sumSquared = 0;
         let dot = 0;
