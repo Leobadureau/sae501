@@ -1,12 +1,11 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { SparkRenderer, SplatMesh, SparkControls, utils } from "@sparkjsdev/spark";
+import { SparkRenderer, SplatMesh, SparkControls, SparkXr, utils } from "@sparkjsdev/spark";
 
 const RENDER_TIMEOUT_MS = 5 * 1000;
 const URL_BASE = ".";
 const SPAWN_POSITION = new THREE.Vector3(0, 1.5, -3.9);
 const MOVEMENT_RADIUS = 2;
-const MARKER_SCAN_STORAGE_KEY = "sae501-marker-scanned";
 
 const scene = new THREE.Scene();
 const movementPerimeter = new THREE.Mesh(
@@ -45,18 +44,9 @@ scene.add(spark);
 localFrame.add(camera);
 
 const markerOverlay = document.getElementById("marker-overlay");
-function hasSavedMarkerScan() {
-  try {
-    return localStorage.getItem(MARKER_SCAN_STORAGE_KEY) === "true";
-  } catch (error) {
-    console.warn("Could not read saved marker state.", error);
-    return false;
-  }
-}
-
 const markerDetection = {
   enabled: false,
-  locked: hasSavedMarkerScan(),
+  locked: false,
   video: null,
   stream: null,
   canvas: document.createElement("canvas"),
@@ -317,7 +307,42 @@ controls.pointerControls.reverseRotate = utils.isMobile();
 controls.pointerControls.rotateSpeed *= 2.0;
 controls.pointerControls.slideSpeed *= 0.75;
 
-function updateMovement() {
+function updateMovement(xrFrame) {
+  if (xr.session && xr.mode === "immersive-ar") {
+    const referenceSpace = renderer.xr.getReferenceSpace();
+    const viewerPose = referenceSpace && xrFrame?.getViewerPose(referenceSpace);
+    if (!viewerPose) return;
+
+    const viewerPosition = viewerPose.transform.position;
+    if (!xrMovementCenter) {
+      xrMovementCenter = new THREE.Vector3(viewerPosition.x, viewerPosition.y, viewerPosition.z);
+      xrMovementStart = localFrame.position.clone();
+      xrMovementRotation = localFrame.quaternion.clone();
+      const centerOffset = xrMovementCenter.clone().applyQuaternion(xrMovementRotation);
+      movementPerimeter.position.set(
+        xrMovementStart.x + centerOffset.x,
+        xrMovementStart.y + centerOffset.y - SPAWN_POSITION.y + 0.015,
+        xrMovementStart.z + centerOffset.z
+      );
+      return;
+    }
+
+    const offsetX = viewerPosition.x - xrMovementCenter.x;
+    const offsetZ = viewerPosition.z - xrMovementCenter.z;
+    const distance = Math.hypot(offsetX, offsetZ);
+    const scale = distance > MOVEMENT_RADIUS ? MOVEMENT_RADIUS / distance : 1;
+    const correction = new THREE.Vector3(
+      offsetX * scale - offsetX,
+      0,
+      offsetZ * scale - offsetZ
+    ).applyQuaternion(xrMovementRotation);
+    localFrame.position.copy(xrMovementStart).add(correction);
+    return;
+  }
+
+  xrMovementCenter = null;
+  xrMovementStart = null;
+  xrMovementRotation = null;
   movementPerimeter.position.set(SPAWN_POSITION.x, 0.015, SPAWN_POSITION.z);
   const offsetX = localFrame.position.x - SPAWN_POSITION.x;
   const offsetZ = localFrame.position.z - SPAWN_POSITION.z;
@@ -329,6 +354,53 @@ function updateMovement() {
   }
   localFrame.position.y = SPAWN_POSITION.y;
 }
+
+const xrButton = document.getElementById("vr-button");
+const xrStatus = document.getElementById("xr-status");
+let xrReady = false;
+let xrSupported = false;
+let xrMovementCenter = null;
+let xrMovementStart = null;
+let xrMovementRotation = null;
+
+xrButton.addEventListener("click", () => {
+  markerDetection.stream?.getTracks().forEach((track) => track.stop());
+  markerDetection.video?.remove();
+  markerDetection.stream = null;
+  markerDetection.video = null;
+}, { capture: true, once: true });
+
+const xr = new SparkXr({
+  renderer,
+  mode: "ar",
+  allowMobileXr: true,
+  element: xrButton,
+  onReady: (supported) => {
+    xrReady = true;
+    xrSupported = supported;
+    xrButton.hidden = !supported || !markerDetection.locked;
+    if (markerDetection.locked && !supported) {
+      xrStatus.textContent = "La réalité augmentée immersive n’est pas prise en charge par cet appareil.";
+      xrStatus.hidden = false;
+    }
+  },
+  onEnterXr: () => {
+    renderEnabled = true;
+    lastMoved = performance.now();
+    renderer.setClearAlpha(xr.mode === "immersive-ar" ? 0 : 1);
+    xrButton.textContent = "Quitter AR";
+  },
+  onExitXr: () => {
+    renderEnabled = true;
+    lastMoved = performance.now();
+    renderer.setClearAlpha(1);
+    xrMovementCenter = null;
+    xrMovementStart = null;
+    xrMovementRotation = null;
+    xrButton.textContent = "Entrer en AR";
+  },
+  controllers: {},
+});
 
 let lastTime = 0;
 let rotation = 0;
@@ -354,13 +426,15 @@ renderer.setAnimationLoop(function animate(time, xrFrame) {
     if (markerFound) {
       markerDetection.locked = true;
       markerDetection.enabled = false;
-      try {
-        localStorage.setItem(MARKER_SCAN_STORAGE_KEY, "true");
-      } catch (error) {
-        console.warn("Could not save marker state for the next visit.", error);
-      }
       renderer.setClearAlpha(0);
       setWorldVisible(true);
+      if (xrReady && xrSupported) {
+        xrButton.textContent = "Entrer en AR";
+        xrButton.hidden = false;
+      } else if (xrReady) {
+        xrStatus.textContent = "La réalité augmentée immersive n’est pas prise en charge par cet appareil.";
+        xrStatus.hidden = false;
+      }
     } else {
       setWorldVisible(false);
     }
@@ -371,8 +445,9 @@ renderer.setAnimationLoop(function animate(time, xrFrame) {
     lastMoved = performance.now();
   }
 
+  xr.updateControllers(camera);
   controls.update(localFrame, camera);
-  updateMovement();
+  updateMovement(xrFrame);
 
   const now = performance.now();
   const dir = localFrame.getWorldDirection(new THREE.Vector3());
@@ -382,11 +457,11 @@ renderer.setAnimationLoop(function animate(time, xrFrame) {
     lastPos.copy(localFrame.position);
     lastDir.copy(dir);
   }
-  if ((now - lastMoved) > RENDER_TIMEOUT_MS) {
+  if (!xr.session && (now - lastMoved) > RENDER_TIMEOUT_MS) {
     renderEnabled = false;
   }
 
-  if (renderEnabled && renderer.domElement.style.display !== "none") {
+  if ((renderEnabled || xr.session) && renderer.domElement.style.display !== "none") {
     renderer.render(scene, camera);
   }
 });
