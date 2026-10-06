@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { SparkRenderer, SplatMesh, SparkControls, SparkXr, utils } from "@sparkjsdev/spark";
+import { SparkRenderer, SplatMesh, SparkControls, utils } from "@sparkjsdev/spark";
 
 const RENDER_TIMEOUT_MS = 5 * 1000;
 const URL_BASE = ".";
@@ -295,6 +295,8 @@ controls.pointerControls.slideSpeed *= 0.75;
 
 const motionButton = document.getElementById("motion-button");
 const motionStatus = document.getElementById("motion-status");
+const motionControl = document.getElementById("motion-control");
+motionControl.hidden = !utils.isMobile();
 let motionEnabled = false;
 let referenceAlpha = null;
 let referenceYaw = 0;
@@ -356,105 +358,18 @@ motionButton.addEventListener("click", async () => {
   }
 });
 
-let xrMovementCenter = null;
-let xrMovementStart = null;
-let xrMovementRotation = null;
-
-function updateMovement(xrFrame) {
-  if (xr.session && xr.mode === "immersive-ar") {
-    const referenceSpace = renderer.xr.getReferenceSpace();
-    const viewerPose = referenceSpace && xrFrame?.getViewerPose(referenceSpace);
-    if (!viewerPose) return;
-
-    const viewerPosition = viewerPose.transform.position;
-    if (!xrMovementCenter) {
-      xrMovementCenter = new THREE.Vector3(viewerPosition.x, viewerPosition.y, viewerPosition.z);
-      xrMovementStart = localFrame.position.clone();
-      xrMovementRotation = localFrame.quaternion.clone();
-      const centerOffset = xrMovementCenter.clone().applyQuaternion(xrMovementRotation);
-      movementPerimeter.position.set(
-        xrMovementStart.x + centerOffset.x,
-        xrMovementStart.y + centerOffset.y - SPAWN_POSITION.y + 0.015,
-        xrMovementStart.z + centerOffset.z
-      );
-      return;
-    }
-
-    const offsetX = viewerPosition.x - xrMovementCenter.x;
-    const offsetZ = viewerPosition.z - xrMovementCenter.z;
-    const distance = Math.hypot(offsetX, offsetZ);
-    const scale = distance > MOVEMENT_RADIUS ? MOVEMENT_RADIUS / distance : 1;
-    const correction = new THREE.Vector3(
-      offsetX * scale - offsetX,
-      0,
-      offsetZ * scale - offsetZ
-    ).applyQuaternion(xrMovementRotation);
-    localFrame.position.copy(xrMovementStart).add(correction);
-    return;
-  }
-
-  xrMovementCenter = null;
-  xrMovementStart = null;
-  xrMovementRotation = null;
+function updateMovement() {
   movementPerimeter.position.set(SPAWN_POSITION.x, 0.015, SPAWN_POSITION.z);
-  if (!xr.session) {
-    const offsetX = localFrame.position.x - SPAWN_POSITION.x;
-    const offsetZ = localFrame.position.z - SPAWN_POSITION.z;
-    const distance = Math.hypot(offsetX, offsetZ);
-    if (distance > MOVEMENT_RADIUS) {
-      const scale = MOVEMENT_RADIUS / distance;
-      localFrame.position.x = SPAWN_POSITION.x + offsetX * scale;
-      localFrame.position.z = SPAWN_POSITION.z + offsetZ * scale;
-    }
-    localFrame.position.y = SPAWN_POSITION.y;
+  const offsetX = localFrame.position.x - SPAWN_POSITION.x;
+  const offsetZ = localFrame.position.z - SPAWN_POSITION.z;
+  const distance = Math.hypot(offsetX, offsetZ);
+  if (distance > MOVEMENT_RADIUS) {
+    const scale = MOVEMENT_RADIUS / distance;
+    localFrame.position.x = SPAWN_POSITION.x + offsetX * scale;
+    localFrame.position.z = SPAWN_POSITION.z + offsetZ * scale;
   }
+  localFrame.position.y = SPAWN_POSITION.y;
 }
-
-const xrButton = document.getElementById("vr-button");
-const xrStatus = document.getElementById("xr-status");
-const motionControl = document.getElementById("motion-control");
-
-const xr = new SparkXr({
-  renderer,
-  mode: "ar",
-  allowMobileXr: true,
-  element: xrButton,
-  onMouseLeaveOpacity: 0.5,
-  onReady: (supported) => {
-    console.log(`SparkXr initialized: XR ${supported ? "supported" : "not supported"}`);
-    xrButton.hidden = !supported;
-    motionControl.hidden = supported;
-    xrStatus.hidden = supported;
-    if (supported) xrButton.textContent = "Entrer en AR";
-    if (!supported) xrStatus.textContent = "AR indisponible ici ; le regard gyroscopique reste disponible.";
-  },
-  onEnterXr: () => {
-    renderEnabled = true;
-    lastMoved = performance.now();
-    if (motionEnabled) {
-      motionEnabled = false;
-      window.removeEventListener("deviceorientation", updateDeviceOrientation, true);
-      clearTimeout(sensorTimeoutId);
-      controls.pointerControls.enable = true;
-      motionButton.textContent = "Activer le regard gyroscopique";
-      motionStatus.hidden = true;
-    }
-    renderer.setClearAlpha(xr.mode === "immersive-ar" ? 0 : 1);
-    xrButton.textContent = "Quitter AR";
-    console.log("Enter XR");
-  },
-  onExitXr: () => {
-    renderEnabled = true;
-    lastMoved = performance.now();
-    renderer.setClearAlpha(1);
-    xrMovementCenter = null;
-    xrMovementStart = null;
-    xrMovementRotation = null;
-    xrButton.textContent = "Entrer en AR";
-    console.log("Exit XR");
-  },
-  controllers: {},
-});
 
 let lastTime = 0;
 let rotation = 0;
@@ -475,12 +390,16 @@ renderer.setAnimationLoop(function animate(time, xrFrame) {
 
   if (markerDetection.enabled && time - lastMarkerCheck >= 150) {
     lastMarkerCheck = time;
-    setWorldVisible(detectMarkerFrame());
+    const markerFound = detectMarkerFrame();
+    if (markerFound && renderer.domElement.style.display === "none") {
+      renderEnabled = true;
+      lastMoved = performance.now();
+    }
+    setWorldVisible(markerFound);
   }
 
-  xr.updateControllers(camera);
   controls.update(localFrame, camera);
-  updateMovement(xrFrame);
+  updateMovement();
 
   const now = performance.now();
   const dir = localFrame.getWorldDirection(new THREE.Vector3());
@@ -490,11 +409,11 @@ renderer.setAnimationLoop(function animate(time, xrFrame) {
     lastPos.copy(localFrame.position);
     lastDir.copy(dir);
   }
-  if (!xr.session && (now - lastMoved) > RENDER_TIMEOUT_MS) {
+  if ((now - lastMoved) > RENDER_TIMEOUT_MS) {
     renderEnabled = false;
   }
 
-  if ((renderEnabled || xr.session) && renderer.domElement.style.display !== "none") {
+  if (renderEnabled && renderer.domElement.style.display !== "none") {
     renderer.render(scene, camera);
   }
 });
