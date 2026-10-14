@@ -46,7 +46,7 @@ localFrame.add(camera);
 const markerOverlay = document.getElementById("marker-overlay");
 const markerDetection = {
   enabled: false,
-  locked: false,
+  locked: true,
   video: null,
   stream: null,
   canvas: document.createElement("canvas"),
@@ -94,6 +94,12 @@ function setWorldVisible(visible) {
 }
 
 async function setupMarkerDetection() {
+  if (markerDetection.locked) {
+    renderer.setClearAlpha(1);
+    setWorldVisible(true);
+    return;
+  }
+
   if (!navigator.mediaDevices?.getUserMedia) {
     markerOverlay.textContent = "Caméra indisponible. Ouvrez cette page en HTTPS et autorisez la caméra.";
     if (markerDetection.locked) {
@@ -267,6 +273,7 @@ function convertToBasicMaterials(object) {
 }
 
 const gltfLoader = new GLTFLoader();
+const interactiveModels = [];
 for (const mesh of meshes) {
   try {
     const gltf = await gltfLoader.loadAsync(`${URL_BASE}/${mesh.filename}`);
@@ -278,10 +285,88 @@ for (const mesh of meshes) {
     const meshScale = mesh.transform?.scale ?? [1, 1, 1];
     model.scale.set(meshScale[0], meshScale[1], meshScale[2]);
     scene.add(model);
+
+    const highlight = new THREE.BoxHelper(model, 0x65e6c5);
+    highlight.material.depthTest = false;
+    highlight.renderOrder = 1000;
+    highlight.visible = false;
+    scene.add(highlight);
+    interactiveModels.push({ model, highlight });
   } catch (error) {
     console.warn(`Failed to load mesh: ${mesh.filename}`, error);
   }
 }
+
+const interactionRaycaster = new THREE.Raycaster();
+const interactionPointer = new THREE.Vector2();
+let interactionPointerStart = null;
+let hoveredModel = null;
+let selectedModel = null;
+
+function findInteractiveModel(event) {
+  const bounds = renderer.domElement.getBoundingClientRect();
+  interactionPointer.x = ((event.clientX - bounds.left) / bounds.width) * 2 - 1;
+  interactionPointer.y = -((event.clientY - bounds.top) / bounds.height) * 2 + 1;
+  camera.updateMatrixWorld(true);
+  interactionRaycaster.setFromCamera(interactionPointer, camera);
+
+  const intersections = interactionRaycaster.intersectObjects(
+    interactiveModels.map(({ model }) => model),
+    true
+  );
+  let object = intersections[0]?.object;
+
+  while (object) {
+    const entry = interactiveModels.find(({ model }) => model === object);
+    if (entry) return entry.model;
+    object = object.parent;
+  }
+
+  return null;
+}
+
+function updateInteractionHighlights() {
+  for (const { model, highlight } of interactiveModels) {
+    highlight.visible = model === hoveredModel || model === selectedModel;
+    if (highlight.visible) {
+      model.updateWorldMatrix(true, true);
+      highlight.update();
+    }
+  }
+}
+
+renderer.domElement.addEventListener("pointerdown", (event) => {
+  if (event.button === 0) {
+    interactionPointerStart = { x: event.clientX, y: event.clientY };
+  }
+});
+
+renderer.domElement.addEventListener("pointermove", (event) => {
+  hoveredModel = findInteractiveModel(event);
+  renderer.domElement.style.cursor = hoveredModel ? "pointer" : "";
+  updateInteractionHighlights();
+});
+
+renderer.domElement.addEventListener("pointerup", (event) => {
+  if (!interactionPointerStart) return;
+  const movement = Math.hypot(
+    event.clientX - interactionPointerStart.x,
+    event.clientY - interactionPointerStart.y
+  );
+  interactionPointerStart = null;
+  if (movement > 6) return;
+
+  const model = findInteractiveModel(event);
+  selectedModel = model === selectedModel ? null : model;
+  hoveredModel = model;
+  updateInteractionHighlights();
+});
+
+renderer.domElement.addEventListener("pointerleave", () => {
+  hoveredModel = null;
+  renderer.domElement.style.cursor = "";
+  updateInteractionHighlights();
+});
 
 window.THREE = THREE;
 window.scene = scene;

@@ -23,6 +23,16 @@
       }
     }
   ],
+  "meshes": [
+    {
+      "filename": "Objet/Peigne.glb",
+      "transform": {
+        "translation": [0.324, 0.4, -5.525],
+        "quaternion": [0, 0, 0, 1],
+        "scale": [1, 1, 1]
+      }
+    }
+  ],
   "metadata": {
     "exportTimestamp": "2026-09-26T13:07:53.740Z",
     "spzExportVersion": 2
