@@ -298,6 +298,7 @@ for (const mesh of meshes) {
 }
 
 const interactionRaycaster = new THREE.Raycaster();
+interactionRaycaster.far = 10;
 const interactionPointer = new THREE.Vector2();
 let interactionPointerStart = null;
 let hoveredModel = null;
@@ -310,6 +311,10 @@ function findInteractiveModel(event) {
   camera.updateMatrixWorld(true);
   interactionRaycaster.setFromCamera(interactionPointer, camera);
 
+  return findInteractiveModelAtRay();
+}
+
+function findInteractiveModelAtRay() {
   const intersections = interactionRaycaster.intersectObjects(
     interactiveModels.map(({ model }) => model),
     true
@@ -325,6 +330,14 @@ function findInteractiveModel(event) {
   return null;
 }
 
+function findXrInteractiveModel(controller) {
+  controller.updateMatrixWorld(true);
+  const origin = new THREE.Vector3().setFromMatrixPosition(controller.matrixWorld);
+  const direction = new THREE.Vector3(0, 0, -1).transformDirection(controller.matrixWorld);
+  interactionRaycaster.set(origin, direction);
+  return findInteractiveModelAtRay();
+}
+
 function updateInteractionHighlights() {
   for (const { model, highlight } of interactiveModels) {
     highlight.visible = model === hoveredModel || model === selectedModel;
@@ -333,6 +346,56 @@ function updateInteractionHighlights() {
       highlight.update();
     }
   }
+}
+
+function toggleInteractiveSelection(model) {
+  selectedModel = model === selectedModel ? null : model;
+  hoveredModel = model;
+  updateInteractionHighlights();
+}
+
+const xrInteractionControllers = [];
+for (let index = 0; index < 2; index += 1) {
+  const controller = renderer.xr.getController(index);
+  const ray = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(),
+      new THREE.Vector3(0, 0, -1),
+    ]),
+    new THREE.LineBasicMaterial({ color: 0x65e6c5, transparent: true, opacity: 0.85 })
+  );
+  ray.scale.z = 10;
+  ray.visible = false;
+  controller.add(ray);
+  const interactionController = { controller, ray, connected: false };
+  controller.addEventListener("connected", () => {
+    interactionController.connected = true;
+  });
+  controller.addEventListener("disconnected", () => {
+    interactionController.connected = false;
+    ray.visible = false;
+  });
+  controller.addEventListener("select", () => {
+    toggleInteractiveSelection(findXrInteractiveModel(controller));
+  });
+  scene.add(controller);
+  xrInteractionControllers.push(interactionController);
+}
+
+function updateXrInteraction() {
+  if (!renderer.xr.isPresenting) {
+    for (const { ray } of xrInteractionControllers) ray.visible = false;
+    return;
+  }
+
+  let nextHoveredModel = null;
+  for (const { controller, ray, connected } of xrInteractionControllers) {
+    ray.visible = connected;
+    if (!connected) continue;
+    nextHoveredModel ??= findXrInteractiveModel(controller);
+  }
+  hoveredModel = nextHoveredModel;
+  updateInteractionHighlights();
 }
 
 renderer.domElement.addEventListener("pointerdown", (event) => {
@@ -356,10 +419,7 @@ renderer.domElement.addEventListener("pointerup", (event) => {
   interactionPointerStart = null;
   if (movement > 6) return;
 
-  const model = findInteractiveModel(event);
-  selectedModel = model === selectedModel ? null : model;
-  hoveredModel = model;
-  updateInteractionHighlights();
+  toggleInteractiveSelection(findInteractiveModel(event));
 });
 
 renderer.domElement.addEventListener("pointerleave", () => {
@@ -533,6 +593,7 @@ renderer.setAnimationLoop(function animate(time, xrFrame) {
   xr.updateControllers(camera);
   controls.update(localFrame, camera);
   updateMovement(xrFrame);
+  updateXrInteraction();
 
   const now = performance.now();
   const dir = localFrame.getWorldDirection(new THREE.Vector3());
