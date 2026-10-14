@@ -47,7 +47,7 @@ localFrame.add(camera);
 const markerOverlay = document.getElementById("marker-overlay");
 const markerDetection = {
   enabled: false,
-  locked: true,
+  locked: false,
   video: null,
   stream: null,
   canvas: document.createElement("canvas"),
@@ -116,7 +116,7 @@ async function setupMarkerDetection() {
     if (!markerDetection.locked) {
       const markerImage = new Image();
       markerImage.crossOrigin = "anonymous";
-      markerImage.src = "./SCANNE.png";
+      markerImage.src = "./assets/images/SCANNE.png";
       await markerImage.decode();
 
       const markerCanvas = document.createElement("canvas");
@@ -215,9 +215,9 @@ function detectMarkerFrame() {
   return false;
 }
 
-const markerDetectionReady = setupMarkerDetection();
+setupMarkerDetection();
 
-const sceneJson = await fetch(`${URL_BASE}/scene.json`).then((response) => response.json());
+const sceneJson = await fetch(`${URL_BASE}/data/scene.json`).then((response) => response.json());
 const splats = sceneJson.splats ?? [];
 const meshes = sceneJson.meshes ?? [];
 
@@ -633,9 +633,6 @@ const xr = new SparkXr({
   controllers: {},
 });
 
-let lastTime = 0;
-let rotation = 0;
-let xrTime = 0;
 let lastMarkerCheck = 0;
 
 document.addEventListener("keydown", (event) => {
@@ -647,9 +644,6 @@ document.addEventListener("keydown", (event) => {
 });
 
 renderer.setAnimationLoop(function animate(time, xrFrame) {
-  const deltaTime = time - (lastTime || time);
-  lastTime = time;
-
   if (markerDetection.enabled && time - lastMarkerCheck >= 150) {
     lastMarkerCheck = time;
     const markerFound = detectMarkerFrame();

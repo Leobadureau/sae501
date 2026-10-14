@@ -1,7 +1,7 @@
 {
   "splats": [
     {
-      "filename": "corsican-mountain-clearing-night.spz",
+      "filename": "assets/scenes/corsican-mountain-clearing-night.spz",
       "transform": {
         "translation": [
           0,
@@ -25,7 +25,7 @@
   ],
   "meshes": [
     {
-      "filename": "Objet/Peigne.glb",
+      "filename": "assets/models/Peigne.glb",
       "transform": {
         "translation": [0.324, 0.4, -5.525],
         "quaternion": [0, 0, 0, 1],
@@ -33,10 +33,10 @@
       }
     },
     {
-      "filename": "Objet/Strega.glb",
+      "filename": "assets/models/Strega.glb",
       "visible": false,
       "interactive": false,
-      "revealOnGrab": "Objet/Peigne.glb",
+      "revealOnGrab": "assets/models/Peigne.glb",
       "transform": {
         "translation": [0.2, 0.01, -6.5],
         "quaternion": [0, 0, 0, 1],

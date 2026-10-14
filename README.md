@@ -22,9 +22,10 @@ Then open [http://localhost:8000](http://localhost:8000) in your browser.
 
 ## Controls
 
-- On a phone, drag the scene or tap **Activer le regard gyroscopique**. Hold the phone facing the starting view to calibrate, then turn around to look around the scene.
-- On supported phones, **Entrer en AR** tracks camera position inside the visible 2-meter perimeter. At the edge, virtual movement stops. WebXR AR support depends on the phone and browser; the gyroscope remains available for looking around when AR is unavailable.
-- VR is available only when the browser and headset support immersive WebXR. Use a compatible browser over HTTPS, such as the GitHub Pages site.
+- Allow camera access and point it at `assets/images/SCANNE.png`. The scene and the **Entrer en AR** button appear after the marker is detected.
+- In AR on Quest, point a controller at the comb and press its trigger to pick it up; press again to drop it. Strega appears when the comb is picked up.
+- Enable hand tracking in the headset settings to display tracked hand models. Controller input remains available as well.
+- On supported devices, AR movement is limited to the visible 2-meter perimeter. WebXR support depends on the browser and device; use HTTPS for remote access.
 
 ### Using Node.js
 
@@ -37,10 +38,13 @@ npx serve .
 ## Files
 
 - `index.html` – The viewer HTML file
-- `spark.module.min.js` – The SparkJS rendering library
-- `scene.json` – Scene manifest containing transforms and file references
-- `*.spz` – Compressed gaussian splat files
-- `*.glb` – 3D mesh files (if applicable)
+- `css/` – Stylesheets
+- `js/` – Viewer logic
+- `data/scene.json` – Scene manifest containing transforms and file references
+- `assets/images/` – Marker images
+- `assets/models/` – GLB objects
+- `assets/scenes/` – Compressed Gaussian splat files
+- SparkJS `2.3.1` – Loaded from the official CDN through the import map
 
 ## Resources
 
