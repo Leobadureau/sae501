@@ -314,28 +314,37 @@ function findInteractiveModel(event) {
   return findInteractiveModelAtRay();
 }
 
-function findInteractiveModelAtRay() {
+function findInteractiveHitAtRay() {
   const intersections = interactionRaycaster.intersectObjects(
     interactiveModels.map(({ model }) => model),
     true
   );
-  let object = intersections[0]?.object;
+  const intersection = intersections[0];
+  let object = intersection?.object;
 
   while (object) {
     const entry = interactiveModels.find(({ model }) => model === object);
-    if (entry) return entry.model;
+    if (entry) return { model: entry.model, point: intersection.point.clone() };
     object = object.parent;
   }
 
   return null;
 }
 
-function findXrInteractiveModel(controller) {
+function findInteractiveModelAtRay() {
+  return findInteractiveHitAtRay()?.model ?? null;
+}
+
+function findXrInteractiveHit(controller) {
   controller.updateMatrixWorld(true);
   const origin = new THREE.Vector3().setFromMatrixPosition(controller.matrixWorld);
   const direction = new THREE.Vector3(0, 0, -1).transformDirection(controller.matrixWorld);
   interactionRaycaster.set(origin, direction);
-  return findInteractiveModelAtRay();
+  return findInteractiveHitAtRay();
+}
+
+function findXrInteractiveModel(controller) {
+  return findXrInteractiveHit(controller)?.model ?? null;
 }
 
 function updateInteractionHighlights() {
@@ -352,6 +361,47 @@ function toggleInteractiveSelection(model) {
   selectedModel = model === selectedModel ? null : model;
   hoveredModel = model;
   updateInteractionHighlights();
+}
+
+function beginXrGrab(interactionController) {
+  const hit = findXrInteractiveHit(interactionController.controller);
+  if (!hit) return;
+
+  const { controller } = interactionController;
+  controller.updateWorldMatrix(true, false);
+  hit.model.updateWorldMatrix(true, false);
+  const controllerQuaternion = controller.getWorldQuaternion(new THREE.Quaternion());
+  const modelPosition = hit.model.getWorldPosition(new THREE.Vector3());
+  const modelQuaternion = hit.model.getWorldQuaternion(new THREE.Quaternion());
+
+  interactionController.grabbed = {
+    model: hit.model,
+    localPosition: modelPosition
+      .sub(controller.getWorldPosition(new THREE.Vector3()))
+      .applyQuaternion(controllerQuaternion.clone().invert()),
+    localQuaternion: controllerQuaternion.invert().multiply(modelQuaternion),
+  };
+  selectedModel = hit.model;
+  hoveredModel = hit.model;
+  updateInteractionHighlights();
+}
+
+function updateXrGrab(interactionController) {
+  const { controller, grabbed } = interactionController;
+  if (!grabbed || !grabbed.model.parent) return;
+
+  controller.updateWorldMatrix(true, false);
+  const worldPosition = grabbed.localPosition.clone().applyMatrix4(controller.matrixWorld);
+  const worldQuaternion = controller
+    .getWorldQuaternion(new THREE.Quaternion())
+    .multiply(grabbed.localQuaternion);
+  const parent = grabbed.model.parent;
+  parent.updateWorldMatrix(true, false);
+  grabbed.model.position.copy(parent.worldToLocal(worldPosition));
+  grabbed.model.quaternion.copy(
+    parent.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(worldQuaternion)
+  );
+  grabbed.model.updateWorldMatrix(true, true);
 }
 
 const xrInteractionControllers = [];
@@ -374,9 +424,13 @@ for (let index = 0; index < 2; index += 1) {
   controller.addEventListener("disconnected", () => {
     interactionController.connected = false;
     ray.visible = false;
+    interactionController.grabbed = null;
   });
-  controller.addEventListener("select", () => {
-    toggleInteractiveSelection(findXrInteractiveModel(controller));
+  controller.addEventListener("selectstart", () => {
+    beginXrGrab(interactionController);
+  });
+  controller.addEventListener("selectend", () => {
+    interactionController.grabbed = null;
   });
   scene.add(controller);
   xrInteractionControllers.push(interactionController);
@@ -384,14 +438,19 @@ for (let index = 0; index < 2; index += 1) {
 
 function updateXrInteraction() {
   if (!renderer.xr.isPresenting) {
-    for (const { ray } of xrInteractionControllers) ray.visible = false;
+    for (const interactionController of xrInteractionControllers) {
+      interactionController.ray.visible = false;
+      interactionController.grabbed = null;
+    }
     return;
   }
 
   let nextHoveredModel = null;
-  for (const { controller, ray, connected } of xrInteractionControllers) {
+  for (const interactionController of xrInteractionControllers) {
+    const { controller, ray, connected } = interactionController;
     ray.visible = connected;
     if (!connected) continue;
+    updateXrGrab(interactionController);
     nextHoveredModel ??= findXrInteractiveModel(controller);
   }
   hoveredModel = nextHoveredModel;
@@ -539,6 +598,9 @@ const xr = new SparkXr({
     renderEnabled = true;
     lastMoved = performance.now();
     renderer.setClearAlpha(1);
+    for (const interactionController of xrInteractionControllers) {
+      interactionController.grabbed = null;
+    }
     xrMovementCenter = null;
     xrMovementStart = null;
     xrMovementRotation = null;
