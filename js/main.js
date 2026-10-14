@@ -368,18 +368,10 @@ function beginXrGrab(interactionController) {
   if (!hit) return;
 
   const { controller } = interactionController;
-  controller.updateWorldMatrix(true, false);
-  hit.model.updateWorldMatrix(true, false);
-  const controllerQuaternion = controller.getWorldQuaternion(new THREE.Quaternion());
-  const modelPosition = hit.model.getWorldPosition(new THREE.Vector3());
-  const modelQuaternion = hit.model.getWorldQuaternion(new THREE.Quaternion());
-
   interactionController.grabbed = {
     model: hit.model,
-    localPosition: modelPosition
-      .sub(controller.getWorldPosition(new THREE.Vector3()))
-      .applyQuaternion(controllerQuaternion.clone().invert()),
-    localQuaternion: controllerQuaternion.invert().multiply(modelQuaternion),
+    localPosition: new THREE.Vector3(0, 0, -0.08),
+    localQuaternion: new THREE.Quaternion(),
   };
   selectedModel = hit.model;
   hoveredModel = hit.model;
