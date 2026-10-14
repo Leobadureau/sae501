@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { XRHandModelFactory } from "three/addons/webxr/XRHandModelFactory.js";
 import { SparkRenderer, SplatMesh, SparkControls, SparkXr, utils } from "@sparkjsdev/spark";
 
 const RENDER_TIMEOUT_MS = 5 * 1000;
@@ -434,6 +435,16 @@ for (let index = 0; index < 2; index += 1) {
   xrInteractionControllers.push(interactionController);
 }
 
+const handModelFactory = new XRHandModelFactory(
+  null,
+  (handModel) => convertToBasicMaterials(handModel)
+);
+for (let index = 0; index < 2; index += 1) {
+  const hand = renderer.xr.getHand(index);
+  hand.add(handModelFactory.createHandModel(hand, "mesh"));
+  localFrame.add(hand);
+}
+
 function updateXrInteraction() {
   if (!renderer.xr.isPresenting) {
     for (const interactionController of xrInteractionControllers) {
@@ -576,6 +587,7 @@ const xr = new SparkXr({
   renderer,
   mode: "ar",
   allowMobileXr: true,
+  enableHands: true,
   element: xrButton,
   onReady: (supported) => {
     xrReady = true;
