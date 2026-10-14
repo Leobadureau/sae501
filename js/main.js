@@ -275,24 +275,35 @@ function convertToBasicMaterials(object) {
 
 const gltfLoader = new GLTFLoader();
 const interactiveModels = [];
+const modelsRevealedByGrab = new Map();
 for (const mesh of meshes) {
   try {
     const gltf = await gltfLoader.loadAsync(`${URL_BASE}/${mesh.filename}`);
     const model = gltf.scene;
     convertToBasicMaterials(model);
+    model.userData.filename = mesh.filename;
 
     model.position.fromArray(mesh.transform?.translation ?? [0, 0, 0]);
     model.quaternion.fromArray(mesh.transform?.quaternion ?? [0, 0, 0, 1]);
     const meshScale = mesh.transform?.scale ?? [1, 1, 1];
     model.scale.set(meshScale[0], meshScale[1], meshScale[2]);
+    model.visible = mesh.visible ?? true;
     scene.add(model);
 
-    const highlight = new THREE.BoxHelper(model, 0x65e6c5);
-    highlight.material.depthTest = false;
-    highlight.renderOrder = 1000;
-    highlight.visible = false;
-    scene.add(highlight);
-    interactiveModels.push({ model, highlight });
+    if (mesh.interactive !== false) {
+      const highlight = new THREE.BoxHelper(model, 0x65e6c5);
+      highlight.material.depthTest = false;
+      highlight.renderOrder = 1000;
+      highlight.visible = false;
+      scene.add(highlight);
+      interactiveModels.push({ model, highlight });
+    }
+
+    if (mesh.revealOnGrab) {
+      const revealedModels = modelsRevealedByGrab.get(mesh.revealOnGrab) ?? [];
+      revealedModels.push(model);
+      modelsRevealedByGrab.set(mesh.revealOnGrab, revealedModels);
+    }
   } catch (error) {
     console.warn(`Failed to load mesh: ${mesh.filename}`, error);
   }
@@ -374,6 +385,9 @@ function beginXrGrab(interactionController) {
     localPosition: new THREE.Vector3(0, 0, -0.08),
     localQuaternion: new THREE.Quaternion(),
   };
+  for (const model of modelsRevealedByGrab.get(hit.model.userData.filename) ?? []) {
+    model.visible = true;
+  }
   selectedModel = hit.model;
   hoveredModel = hit.model;
   updateInteractionHighlights();

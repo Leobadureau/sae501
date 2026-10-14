@@ -31,6 +31,17 @@
         "quaternion": [0, 0, 0, 1],
         "scale": [1, 1, 1]
       }
+    },
+    {
+      "filename": "Objet/Strega.glb",
+      "visible": false,
+      "interactive": false,
+      "revealOnGrab": "Objet/Peigne.glb",
+      "transform": {
+        "translation": [0.2, 0.01, -6.5],
+        "quaternion": [0, 0, 0, 1],
+        "scale": [1, 1, 1]
+      }
     }
   ],
   "metadata": {
