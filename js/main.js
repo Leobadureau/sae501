@@ -336,7 +336,7 @@ function findInteractiveModelAtRay() {
 }
 
 function findXrInteractiveHit(controller) {
-  controller.updateMatrixWorld(true);
+  controller.updateWorldMatrix(true, false);
   const origin = new THREE.Vector3().setFromMatrixPosition(controller.matrixWorld);
   const direction = new THREE.Vector3(0, 0, -1).transformDirection(controller.matrixWorld);
   interactionRaycaster.set(origin, direction);
@@ -386,6 +386,15 @@ function beginXrGrab(interactionController) {
   updateInteractionHighlights();
 }
 
+function toggleXrGrab(interactionController) {
+  if (interactionController.grabbed) {
+    interactionController.grabbed = null;
+    return;
+  }
+
+  beginXrGrab(interactionController);
+}
+
 function updateXrGrab(interactionController) {
   const { controller, grabbed } = interactionController;
   if (!grabbed || !grabbed.model.parent) return;
@@ -426,13 +435,10 @@ for (let index = 0; index < 2; index += 1) {
     ray.visible = false;
     interactionController.grabbed = null;
   });
-  controller.addEventListener("selectstart", () => {
-    beginXrGrab(interactionController);
+  controller.addEventListener("select", () => {
+    toggleXrGrab(interactionController);
   });
-  controller.addEventListener("selectend", () => {
-    interactionController.grabbed = null;
-  });
-  scene.add(controller);
+  localFrame.add(controller);
   xrInteractionControllers.push(interactionController);
 }
 
