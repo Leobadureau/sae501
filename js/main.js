@@ -1,5 +1,7 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { FBXLoader } from "three/addons/loaders/FBXLoader.js";
+import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { XRHandModelFactory } from "three/addons/webxr/XRHandModelFactory.js";
 import { SparkRenderer, SplatMesh, SparkControls, SparkXr, utils } from "@sparkjsdev/spark";
 
@@ -45,7 +47,12 @@ scene.add(spark);
 localFrame.add(camera);
 
 const markerOverlay = document.getElementById("marker-overlay");
+const modeOverlay = document.getElementById("mode-overlay");
+const pcModeButton = document.getElementById("pc-mode");
+const arModeButton = document.getElementById("ar-mode");
+const pcModeInOverlay = document.getElementById("pc-mode-from-camera");
 const markerDetection = {
+  pcMode: false,
   enabled: false,
   locked: false,
   video: null,
@@ -86,6 +93,27 @@ function updateMarkerOverlay(visible) {
   markerOverlay.classList.toggle("is-visible", !visible);
 }
 
+function enterPcMode() {
+  markerDetection.pcMode = true;
+  markerDetection.locked = true;
+  markerDetection.enabled = false;
+  markerDetection.stream?.getTracks().forEach((track) => track.stop());
+  markerDetection.video?.remove();
+  markerDetection.stream = null;
+  markerDetection.video = null;
+
+  renderer.setClearAlpha(1);
+  setWorldVisible(true);
+  if (modeOverlay) modeOverlay.hidden = true;
+}
+
+pcModeButton?.addEventListener("click", enterPcMode);
+pcModeInOverlay?.addEventListener("click", enterPcMode);
+arModeButton?.addEventListener("click", () => {
+  if (modeOverlay) modeOverlay.hidden = true;
+  setupMarkerDetection();
+});
+
 function setWorldVisible(visible) {
   renderer.domElement.style.display = visible ? "block" : "none";
   if (markerDetection.video) {
@@ -102,13 +130,10 @@ async function setupMarkerDetection() {
   }
 
   if (!navigator.mediaDevices?.getUserMedia) {
-    markerOverlay.textContent = "Caméra indisponible. Ouvrez cette page en HTTPS et autorisez la caméra.";
-    if (markerDetection.locked) {
-      renderer.setClearAlpha(1);
-      setWorldVisible(true);
-    } else {
-      setWorldVisible(false);
-    }
+    markerOverlay.innerHTML =
+      'Caméra indisponible. Ouvrez cette page en HTTPS et autorisez la caméra, ou <button id="pc-mode-from-camera" class="pc-mode-link" type="button">Version PC</button>.';
+    updateMarkerOverlay(false);
+    document.getElementById("pc-mode-from-camera")?.addEventListener("click", enterPcMode);
     return;
   }
 
@@ -158,13 +183,10 @@ async function setupMarkerDetection() {
     if (!markerDetection.locked) console.log("Marker detection ready using SCANNE.png");
   } catch (error) {
     console.warn("Marker detection unavailable; keeping world hidden.", error);
-    markerOverlay.textContent = "Autorisez l’accès à la caméra pour scanner SCANNE.png.";
-    if (markerDetection.locked) {
-      renderer.setClearAlpha(1);
-      setWorldVisible(true);
-    } else {
-      setWorldVisible(false);
-    }
+    markerOverlay.innerHTML =
+      'Autorisez l’accès à la caméra pour scanner SCANNE.png, ou <button id="pc-mode-from-camera" class="pc-mode-link" type="button">Version PC</button>.';
+    updateMarkerOverlay(false);
+    document.getElementById("pc-mode-from-camera")?.addEventListener("click", enterPcMode);
   }
 }
 
@@ -215,7 +237,13 @@ function detectMarkerFrame() {
   return false;
 }
 
-setupMarkerDetection();
+const startInPcMode = new URLSearchParams(window.location.search).has("pc");
+if (startInPcMode) {
+  enterPcMode();
+} else {
+  markerOverlay.textContent = "Choisissez un mode pour commencer.";
+  updateMarkerOverlay(false);
+}
 
 const sceneJson = await fetch(`${URL_BASE}/data/scene.json`).then((response) => response.json());
 const splats = sceneJson.splats ?? [];
@@ -273,39 +301,110 @@ function convertToBasicMaterials(object) {
   });
 }
 
+// ==========================================
+// CHARGEMENT DES MODÈLES 3D
+// ==========================================
+
 const gltfLoader = new GLTFLoader();
+
+// Initialisation du décompresseur Draco
+const dracoLoader = new DRACOLoader();
+
+dracoLoader.setDecoderPath(
+  "https://www.gstatic.com/draco/versioned/decoders/1.5.7/"
+);
+
+// Association de Draco au GLTFLoader
+gltfLoader.setDRACOLoader(dracoLoader);
+
+const fbxLoader = new FBXLoader();
+
 const interactiveModels = [];
 const modelsRevealedByGrab = new Map();
+
 for (const mesh of meshes) {
   try {
-    const gltf = await gltfLoader.loadAsync(`${URL_BASE}/${mesh.filename}`);
-    const model = gltf.scene;
+    const isFbx = mesh.filename.toLowerCase().endsWith(".fbx");
+    const loader = isFbx ? fbxLoader : gltfLoader;
+
+    const loaded = await loader.loadAsync(
+      `${URL_BASE}/${mesh.filename}`
+    );
+
+    const model = isFbx ? loaded : loaded.scene;
+
+    // Conversion des matériaux pour l'affichage
     convertToBasicMaterials(model);
+
     model.userData.filename = mesh.filename;
 
-    model.position.fromArray(mesh.transform?.translation ?? [0, 0, 0]);
-    model.quaternion.fromArray(mesh.transform?.quaternion ?? [0, 0, 0, 1]);
+    // Positionnement du modèle
+    model.position.fromArray(
+      mesh.transform?.translation ?? [0, 0, 0]
+    );
+
+    model.quaternion.fromArray(
+      mesh.transform?.quaternion ?? [0, 0, 0, 1]
+    );
+
     const meshScale = mesh.transform?.scale ?? [1, 1, 1];
-    model.scale.set(meshScale[0], meshScale[1], meshScale[2]);
+
+    if (Array.isArray(meshScale)) {
+      model.scale.set(
+        meshScale[0],
+        meshScale[1],
+        meshScale[2]
+      );
+    } else {
+      model.scale.setScalar(meshScale);
+    }
+
+    // Visibilité initiale
     model.visible = mesh.visible ?? true;
+
     scene.add(model);
 
+    // Gestion de l'interactivité
     if (mesh.interactive !== false) {
-      const highlight = new THREE.BoxHelper(model, 0x65e6c5);
+      const highlight = new THREE.BoxHelper(
+        model,
+        0x65e6c5
+      );
+
       highlight.material.depthTest = false;
       highlight.renderOrder = 1000;
       highlight.visible = false;
+
       scene.add(highlight);
-      interactiveModels.push({ model, highlight });
+
+      interactiveModels.push({
+        model,
+        highlight
+      });
     }
 
+    // Gestion de l'apparition après récupération
     if (mesh.revealOnGrab) {
-      const revealedModels = modelsRevealedByGrab.get(mesh.revealOnGrab) ?? [];
+      const revealedModels =
+        modelsRevealedByGrab.get(mesh.revealOnGrab) ?? [];
+
       revealedModels.push(model);
-      modelsRevealedByGrab.set(mesh.revealOnGrab, revealedModels);
+
+      modelsRevealedByGrab.set(
+        mesh.revealOnGrab,
+        revealedModels
+      );
     }
+
+    console.log(
+      `Modèle chargé avec succès : ${mesh.filename}`
+    );
+
   } catch (error) {
-    console.warn(`Failed to load mesh: ${mesh.filename}`, error);
+    console.warn(
+      `Failed to load mesh: ${mesh.filename}`,
+      error
+    );
   }
 }
 
@@ -316,14 +415,78 @@ let interactionPointerStart = null;
 let hoveredModel = null;
 let selectedModel = null;
 
-function findInteractiveModel(event) {
+function findInteractiveHit(event) {
   const bounds = renderer.domElement.getBoundingClientRect();
   interactionPointer.x = ((event.clientX - bounds.left) / bounds.width) * 2 - 1;
   interactionPointer.y = -((event.clientY - bounds.top) / bounds.height) * 2 + 1;
   camera.updateMatrixWorld(true);
   interactionRaycaster.setFromCamera(interactionPointer, camera);
 
-  return findInteractiveModelAtRay();
+  return findInteractiveHitAtRay();
+}
+
+function findInteractiveModel(event) {
+  return findInteractiveHit(event)?.model ?? null;
+}
+
+function revealModelsFor(model) {
+  for (const revealed of modelsRevealedByGrab.get(model.userData.filename) ?? []) {
+    revealed.visible = true;
+  }
+}
+
+let pointerGrab = null;
+const grabPlane = new THREE.Plane();
+const grabPlaneHit = new THREE.Vector3();
+
+function beginPointerGrab(event, hit) {
+  camera.getWorldDirection(grabPlane.normal);
+  grabPlane.setFromNormalAndCoplanarPoint(grabPlane.normal, hit.point);
+
+  const modelWorldPosition = hit.model.getWorldPosition(new THREE.Vector3());
+  pointerGrab = {
+    pointerId: event.pointerId,
+    model: hit.model,
+    offset: modelWorldPosition.sub(hit.point),
+    moved: false,
+    start: { x: event.clientX, y: event.clientY },
+  };
+
+  revealModelsFor(hit.model);
+  selectedModel = hit.model;
+  hoveredModel = hit.model;
+  updateInteractionHighlights();
+  renderer.domElement.setPointerCapture(event.pointerId);
+}
+
+function updatePointerGrab(event) {
+  if (!pointerGrab) return false;
+
+  const bounds = renderer.domElement.getBoundingClientRect();
+  interactionPointer.x = ((event.clientX - bounds.left) / bounds.width) * 2 - 1;
+  interactionPointer.y = -((event.clientY - bounds.top) / bounds.height) * 2 + 1;
+  camera.updateMatrixWorld(true);
+  interactionRaycaster.setFromCamera(interactionPointer, camera);
+
+  if (!interactionRaycaster.ray.intersectPlane(grabPlane, grabPlaneHit)) return true;
+
+  const { model, offset } = pointerGrab;
+  const parent = model.parent;
+  parent.updateWorldMatrix(true, false);
+  model.position.copy(parent.worldToLocal(grabPlaneHit.clone().add(offset)));
+  model.updateWorldMatrix(true, true);
+
+  if (Math.hypot(event.clientX - pointerGrab.start.x, event.clientY - pointerGrab.start.y) > 6) {
+    pointerGrab.moved = true;
+  }
+
+  return true;
+}
+
+function endPointerGrab() {
+  if (!pointerGrab) return;
+  pointerGrab = null;
+  updateInteractionHighlights();
 }
 
 function findInteractiveHitAtRay() {
@@ -480,34 +643,54 @@ function updateXrInteraction() {
   updateInteractionHighlights();
 }
 
+let defaultRotateSpeed = null;
+
 renderer.domElement.addEventListener("pointerdown", (event) => {
-  if (event.button === 0) {
-    interactionPointerStart = { x: event.clientX, y: event.clientY };
+  if (event.button !== 0) return;
+  interactionPointerStart = { x: event.clientX, y: event.clientY };
+
+  const hit = findInteractiveHit(event);
+  if (hit) {
+    defaultRotateSpeed ??= controls.pointerControls.rotateSpeed;
+    beginPointerGrab(event, hit);
+    controls.pointerControls.rotateSpeed = 0;
   }
 });
 
 renderer.domElement.addEventListener("pointermove", (event) => {
+  if (updatePointerGrab(event)) return;
+
   hoveredModel = findInteractiveModel(event);
   renderer.domElement.style.cursor = hoveredModel ? "pointer" : "";
   updateInteractionHighlights();
 });
 
 renderer.domElement.addEventListener("pointerup", (event) => {
+  const wasGrabbing = pointerGrab !== null;
+  if (defaultRotateSpeed !== null) controls.pointerControls.rotateSpeed = defaultRotateSpeed;
+  endPointerGrab();
   if (!interactionPointerStart) return;
   const movement = Math.hypot(
     event.clientX - interactionPointerStart.x,
     event.clientY - interactionPointerStart.y
   );
   interactionPointerStart = null;
-  if (movement > 6) return;
+  if (wasGrabbing || movement > 6) return;
 
   toggleInteractiveSelection(findInteractiveModel(event));
 });
 
 renderer.domElement.addEventListener("pointerleave", () => {
+  if (defaultRotateSpeed !== null) controls.pointerControls.rotateSpeed = defaultRotateSpeed;
+  endPointerGrab();
   hoveredModel = null;
   renderer.domElement.style.cursor = "";
   updateInteractionHighlights();
+});
+
+window.addEventListener("blur", () => {
+  if (defaultRotateSpeed !== null) controls.pointerControls.rotateSpeed = defaultRotateSpeed;
+  endPointerGrab();
 });
 
 window.THREE = THREE;
@@ -640,6 +823,18 @@ document.addEventListener("keydown", (event) => {
     const cameraPos = camera.getWorldPosition(new THREE.Vector3());
     const cameraQuat = camera.getWorldQuaternion(new THREE.Quaternion());
     console.log("camera position: ", JSON.stringify(cameraPos.toArray()), "quaternion: ", JSON.stringify(cameraQuat.toArray()));
+  }
+
+  if (event.key.toLowerCase() === "o") {
+    for (const { model } of interactiveModels) {
+      const pos = model.getWorldPosition(new THREE.Vector3());
+      const quat = model.getWorldQuaternion(new THREE.Quaternion());
+      const scl = model.getWorldScale(new THREE.Vector3());
+      console.log(
+        `${model.userData.filename} position: ${JSON.stringify(pos.toArray())} quaternion: ${JSON.stringify(quat.toArray())} scale: ${JSON.stringify(scl.toArray())}`
+      );
+      console.log("  → translation:", JSON.stringify([+pos.x.toFixed(3), +pos.y.toFixed(3), +pos.z.toFixed(3)]), "quaternion:", JSON.stringify(quat.toArray().map((v) => +v.toFixed(4))), "scale:", JSON.stringify([+scl.x.toFixed(3), +scl.y.toFixed(3), +scl.z.toFixed(3)]));
+    }
   }
 });
 

@@ -25,22 +25,22 @@
   ],
   "meshes": [
     {
-      "filename": "assets/models/Peigne.glb",
+      "filename": "assets/models/Sacoche1.glb",
       "transform": {
-        "translation": [0.324, 0.4, -5.525],
+        "translation": [1.5, 0.2, -6],
         "quaternion": [0, 0, 0, 1],
-        "scale": [1, 1, 1]
+        "scale": [0.20, 0.20, 0.20]
       }
     },
     {
-      "filename": "assets/models/Strega.glb",
+      "filename": "assets/models/old man 3d model/tripo_convert_ad709b62-a73c-451d-b686-15168f7a6180.fbx",
       "visible": false,
       "interactive": false,
-      "revealOnGrab": "assets/models/Peigne.glb",
+      "revealOnGrab": "assets/models/Sacoche1.glb",
       "transform": {
-        "translation": [0.2, 0.01, -6.5],
-        "quaternion": [0, 0, 0, 1],
-        "scale": [1, 1, 1]
+        "translation": [-1.5, 0.2, -9.3],
+        "quaternion": [0, 0.4, 0, 0.7071],
+        "scale": [2, 2, 2]
       }
     }
   ],

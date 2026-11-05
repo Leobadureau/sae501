@@ -1,3 +1,4 @@
+
 :root {
   --bg-color: #05090b;
   --panel-bg: rgba(12, 20, 24, 0.78);
@@ -52,6 +53,87 @@ canvas {
   z-index: 10;
 }
 
+/* ÉCRAN DE CHOIX DU MODE */
+
+.mode-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: #05090b;
+  pointer-events: auto;
+  text-align: center;
+}
+
+.mode-overlay[hidden] {
+  display: none;
+}
+
+.mode-content {
+  width: 100%;
+  max-width: 440px;
+}
+
+.mode-content h1 {
+  margin: 0 0 12px;
+  color: white;
+  font-size: 32px;
+  font-weight: 600;
+}
+
+.mode-content p {
+  margin-bottom: 32px;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 15px;
+}
+
+.mode-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.mode-button {
+  width: 100%;
+  padding: 18px 20px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  color: white;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease,
+    transform 0.2s ease;
+  pointer-events: auto;
+}
+
+.mode-button:hover {
+  background: rgba(255, 255, 255, 0.13);
+  border-color: white;
+  transform: translateY(-2px);
+}
+
+.mode-button span {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.mode-button small {
+  display: block;
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 12px;
+}
+
+/* BOUTONS XR */
+
 .xr-button {
   position: absolute;
   right: max(20px, env(safe-area-inset-right));
@@ -84,6 +166,8 @@ canvas {
   text-shadow: 0 1px 3px var(--shadow-color);
 }
 
+/* DÉTECTION DU MARQUEUR */
+
 .marker-overlay {
   position: absolute;
   left: 50%;
@@ -107,9 +191,30 @@ canvas {
   opacity: 1;
 }
 
+.pc-mode-link {
+  margin-left: 8px;
+  padding: 4px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font: 600 13px sans-serif;
+  cursor: pointer;
+  pointer-events: auto;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.pc-mode-link:hover {
+  background: rgba(255, 255, 255, 0.25);
+  border-color: white;
+}
+
 @media (max-width: 760px) {
   .marker-overlay {
     max-width: calc(100vw - 32px);
   }
-}
 
+  .mode-content h1 {
+    font-size: 26px;
+  }
+}

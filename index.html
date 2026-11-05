@@ -1,10 +1,13 @@
-﻿<!DOCTYPE html>
+﻿
+<!DOCTYPE html>
 <html lang="fr">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>SAE501 - Mountain Clearing</title>
+
     <link rel="stylesheet" href="./css/styles.css" />
+
     <script type="importmap">
       {
         "imports": {
@@ -17,12 +20,54 @@
   </head>
 
   <body>
+
     <div class="hud" aria-live="polite">
-      <button id="vr-button" class="xr-button" type="button" hidden>Entrer en AR</button>
+
+      <!-- ÉCRAN DE CHOIX DU MODE -->
+      <div id="mode-overlay" class="mode-overlay">
+
+        <div class="mode-content">
+
+          <h1>Les légendes corses</h1>
+
+          <p>
+            Choisissez votre mode d'expérience.
+          </p>
+
+          <div class="mode-buttons">
+
+            <button id="pc-mode" class="mode-button" type="button">
+              <span>Version PC</span>
+              <small>Découvrir l'expérience sur ordinateur</small>
+            </button>
+
+            <button id="ar-mode" class="mode-button" type="button">
+              <span>Version réalité augmentée</span>
+              <small>Scanner la carte avec votre caméra</small>
+            </button>
+
+          </div>
+
+        </div>
+
+      </div>
+
+      <!-- BOUTON D'ENTRÉE EN AR -->
+      <button id="vr-button" class="xr-button" type="button" hidden>
+        Entrer en AR
+      </button>
+
+      <!-- INFORMATIONS XR -->
       <p id="xr-status" class="xr-status" role="status" hidden></p>
-      <div id="marker-overlay" class="marker-overlay">Scannez le marqueur <strong>SCANNE.png</strong></div>
+
+      <!-- MESSAGE DE DÉTECTION DU MARQUEUR -->
+      <div id="marker-overlay" class="marker-overlay">
+        Scannez le marqueur <strong>SCANNE.png</strong>
+      </div>
+
     </div>
 
     <script type="module" src="./js/main.js"></script>
+
   </body>
 </html>
