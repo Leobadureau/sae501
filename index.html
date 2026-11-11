@@ -52,6 +52,23 @@
 
       </div>
 
+      <div id="loading-overlay" class="loading-overlay" role="status" aria-live="polite" aria-atomic="true" hidden>
+        <div class="loading-card">
+          <img
+            class="loading-logo"
+            src="./assets/images/loading-logo.svg"
+            alt="Emblème provisoire des légendes corses"
+          />
+          <div class="loading-tiles" aria-hidden="true">
+            <span></span><span></span><span></span>
+            <span></span><span></span><span></span>
+            <span></span><span></span><span></span>
+          </div>
+          <p id="loading-message" class="loading-message">Préparation du monde…</p>
+          <p class="loading-hint">Laissez-vous transporter dans l’au-delà…</p>
+        </div>
+      </div>
+
       <!-- BOUTON D'ENTRÉE EN AR -->
       <button id="vr-button" class="xr-button" type="button" hidden>
         Entrer en AR
@@ -59,6 +76,10 @@
 
       <!-- INFORMATIONS XR -->
       <p id="xr-status" class="xr-status" role="status" hidden></p>
+
+      <output id="position-readout" class="position-readout" aria-live="polite" hidden></output>
+
+      <div id="reveal-flash" class="reveal-flash" aria-hidden="true"></div>
 
       <!-- MESSAGE DE DÉTECTION DU MARQUEUR -->
       <div id="marker-overlay" class="marker-overlay">

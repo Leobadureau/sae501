@@ -25,7 +25,22 @@
   ],
   "meshes": [
     {
+      "filename": "assets/scenes/animated-fire/package/Animated_fire.fbx",
+      "fireAnimation": {
+        "clip": "Take 001",
+        "hideGeometry": ["Ashes", "Log_Grate", "Logs"],
+        "faceCamera": true
+      },
+      "interactive": false,
+      "transform": {
+        "translation": [0.4, -0.1, -8.428],
+        "quaternion": [0, 0, 0, 1],
+        "scale": 0.025
+      }
+    },
+    {
       "filename": "assets/models/Sacoche1.glb",
+      "glow": true,
       "transform": {
         "translation": [1.5, 0.2, -6],
         "quaternion": [0, 0, 0, 1],
@@ -41,6 +56,32 @@
         "translation": [-1.5, 0.2, -9.3],
         "quaternion": [0, 0.4, 0, 0.7071],
         "scale": [2, 2, 2]
+      }
+    }
+  ],
+  "sounds": [
+    {
+      "filename": "assets/Songs/Feu.mp3",
+      "loop": true,
+      "volume": 0.7,
+      "refDistance": 1,
+      "maxDistance": 18,
+      "rolloffFactor": 1,
+      "transform": {
+        "translation": [0.343, 1.5, -8.428]
+      }
+    },
+    {
+      "filename": "assets/Songs/chien.wav",
+      "trigger": "shepherdReveal",
+      "delayMs": 4000,
+      "loop": false,
+      "volume": 1,
+      "refDistance": 1,
+      "maxDistance": 18,
+      "rolloffFactor": 1,
+      "transform": {
+        "translation": [7.351, 1.5, -9.84]
       }
     }
   ],

@@ -7,7 +7,22 @@ import { SparkRenderer, SplatMesh, SparkControls, SparkXr, utils } from "@sparkj
 
 const RENDER_TIMEOUT_MS = 5 * 1000;
 const URL_BASE = ".";
+const MAX_PIXEL_RATIO = 1.5;
 const SPAWN_POSITION = new THREE.Vector3(0, 1.5, -3.9);
+const PC_CAMERA_HEIGHT_OFFSET = -0.15;
+const SEATED_CAMERA_POSITION = new THREE.Vector3(
+  0.1793437486,
+  0.7647448313,
+  -5.6177672547
+);
+const SEATED_CAMERA_ROTATION = new THREE.Quaternion(
+  0.0310214188,
+  0.0167849258,
+  -0.0005210165,
+  0.9993776395
+).normalize();
+const SEATED_MAX_LOOK_DOWN = THREE.MathUtils.degToRad(55);
+const SEATED_MAX_LOOK_UP = THREE.MathUtils.degToRad(75);
 const MOVEMENT_RADIUS = 2;
 
 const scene = new THREE.Scene();
@@ -28,9 +43,16 @@ movementPerimeter.renderOrder = 999;
 scene.add(movementPerimeter);
 
 const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 1000);
+const audioListener = new THREE.AudioListener();
+camera.add(audioListener);
+const positionalSounds = [];
+const revealSounds = [];
+const pendingRevealSounds = new Set();
+let revealSoundsScheduled = false;
+let audioHasUserGesture = false;
 const renderer = new THREE.WebGLRenderer({ alpha: true });
 renderer.setClearColor(0x000000, 0);
-renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, MAX_PIXEL_RATIO));
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 renderer.domElement.style.display = "none";
@@ -48,6 +70,10 @@ localFrame.add(camera);
 
 const markerOverlay = document.getElementById("marker-overlay");
 const modeOverlay = document.getElementById("mode-overlay");
+const loadingOverlay = document.getElementById("loading-overlay");
+const loadingMessage = document.getElementById("loading-message");
+const loadingSpinner = loadingOverlay?.querySelector(".loading-tiles");
+const revealFlash = document.getElementById("reveal-flash");
 const pcModeButton = document.getElementById("pc-mode");
 const arModeButton = document.getElementById("ar-mode");
 const pcModeInOverlay = document.getElementById("pc-mode-from-camera");
@@ -93,19 +119,75 @@ function updateMarkerOverlay(visible) {
   markerOverlay.classList.toggle("is-visible", !visible);
 }
 
+function playRevealFlash() {
+  if (!revealFlash) return;
+  revealFlash.classList.remove("is-active");
+  void revealFlash.offsetWidth;
+  revealFlash.classList.add("is-active");
+}
+
+revealFlash?.addEventListener("animationend", () => {
+  revealFlash.classList.remove("is-active");
+});
+
+function showLoadingError(message) {
+  if (loadingMessage) loadingMessage.textContent = message;
+  if (loadingSpinner) loadingSpinner.hidden = true;
+}
+
 function enterPcMode() {
   markerDetection.pcMode = true;
   markerDetection.locked = true;
   markerDetection.enabled = false;
+  camera.position.y = PC_CAMERA_HEIGHT_OFFSET;
+  movementPerimeter.visible = false;
   markerDetection.stream?.getTracks().forEach((track) => track.stop());
   markerDetection.video?.remove();
   markerDetection.stream = null;
   markerDetection.video = null;
 
   renderer.setClearAlpha(1);
+  if (loadingOverlay) loadingOverlay.hidden = false;
   setWorldVisible(true);
   if (modeOverlay) modeOverlay.hidden = true;
 }
+
+function startReadySounds() {
+  if (audioListener.context.state !== "running") return;
+  for (const sound of positionalSounds) {
+    if (sound.buffer && !sound.isPlaying) sound.play();
+  }
+  for (const sound of pendingRevealSounds) {
+    if (!sound.buffer) continue;
+    if (!sound.isPlaying) sound.play();
+    pendingRevealSounds.delete(sound);
+  }
+}
+
+function scheduleRevealSounds() {
+  if (revealSoundsScheduled) return;
+  revealSoundsScheduled = true;
+  for (const { sound, delayMs } of revealSounds) {
+    window.setTimeout(() => {
+      pendingRevealSounds.add(sound);
+      startReadySounds();
+    }, delayMs);
+  }
+}
+
+function unlockSpatialAudio() {
+  audioHasUserGesture = true;
+  if (audioListener.context.state === "suspended") {
+    audioListener.context.resume().then(startReadySounds).catch((error) => {
+      console.error("Failed to start spatial audio.", error);
+    });
+    return;
+  }
+  startReadySounds();
+}
+
+document.addEventListener("pointerdown", unlockSpatialAudio);
+document.addEventListener("keydown", unlockSpatialAudio);
 
 pcModeButton?.addEventListener("click", enterPcMode);
 pcModeInOverlay?.addEventListener("click", enterPcMode);
@@ -245,9 +327,22 @@ if (startInPcMode) {
   updateMarkerOverlay(false);
 }
 
-const sceneJson = await fetch(`${URL_BASE}/data/scene.json`).then((response) => response.json());
+let sceneJson;
+try {
+  const response = await fetch(`${URL_BASE}/data/scene.json`);
+  if (!response.ok) {
+    throw new Error(`Scene manifest request failed with status ${response.status}`);
+  }
+  sceneJson = await response.json();
+} catch (error) {
+  console.error("Failed to load the scene manifest.", error);
+  showLoadingError("Impossible de charger le monde. Vérifiez votre connexion, puis rechargez la page.");
+  throw error;
+}
 const splats = sceneJson.splats ?? [];
 const meshes = sceneJson.meshes ?? [];
+const sounds = sceneJson.sounds ?? [];
+const splatMeshes = [];
 
 for (const splat of splats) {
   const splatMesh = new SplatMesh({ url: `${URL_BASE}/${splat.filename}`, lod: true });
@@ -256,6 +351,35 @@ for (const splat of splats) {
   const scale = splat.transform?.scale ?? 1;
   splatMesh.scale.set(scale, scale, scale);
   scene.add(splatMesh);
+  splatMeshes.push(splatMesh);
+}
+
+const audioLoader = new THREE.AudioLoader();
+for (const soundConfig of sounds) {
+  const sound = new THREE.PositionalAudio(audioListener);
+  sound.setLoop(soundConfig.loop ?? true);
+  sound.setVolume(soundConfig.volume ?? 1);
+  sound.setRefDistance(soundConfig.refDistance ?? 1);
+  sound.setMaxDistance(soundConfig.maxDistance ?? 100);
+  sound.setRolloffFactor(soundConfig.rolloffFactor ?? 1);
+  sound.setDistanceModel("inverse");
+  sound.position.fromArray(soundConfig.transform?.translation ?? [0, 0, 0]);
+  scene.add(sound);
+  if (soundConfig.trigger === "shepherdReveal") {
+    revealSounds.push({ sound, delayMs: soundConfig.delayMs ?? 0 });
+  } else {
+    positionalSounds.push(sound);
+  }
+
+  audioLoader
+    .loadAsync(`${URL_BASE}/${soundConfig.filename}`)
+    .then((buffer) => {
+      sound.setBuffer(buffer);
+      if (audioHasUserGesture) startReadySounds();
+    })
+    .catch((error) => {
+      console.error(`Failed to load spatial audio: ${soundConfig.filename}`, error);
+    });
 }
 
 function extractAlbedoProperties(material) {
@@ -301,6 +425,104 @@ function convertToBasicMaterials(object) {
   });
 }
 
+async function waitForTexture(texture) {
+  const image = texture.image;
+  if (!image || typeof image !== "object") return;
+
+  if (image.complete === false && typeof image.addEventListener === "function") {
+    await new Promise((resolve, reject) => {
+      const onLoad = () => {
+        image.removeEventListener("error", onError);
+        resolve();
+      };
+      const onError = () => {
+        image.removeEventListener("load", onLoad);
+        reject(new Error(`Failed to load texture: ${image.src || "unknown image"}`));
+      };
+      image.addEventListener("load", onLoad, { once: true });
+      image.addEventListener("error", onError, { once: true });
+    });
+  }
+
+  if (image.complete && image.naturalWidth === 0) {
+    throw new Error(`Texture image is empty: ${image.src || "unknown image"}`);
+  }
+
+  if (typeof image.decode === "function") {
+    await image.decode();
+  }
+}
+
+async function waitForModelTextures(model) {
+  const textures = new Set();
+  model.traverse((child) => {
+    if (!child.isMesh) return;
+    const materials = Array.isArray(child.material) ? child.material : [child.material];
+    for (const material of materials) {
+      for (const value of Object.values(material)) {
+        if (value?.isTexture) textures.add(value);
+      }
+    }
+  });
+  await Promise.all([...textures].map(waitForTexture));
+}
+
+function createGlowTexture() {
+  const canvas = document.createElement("canvas");
+  canvas.width = 128;
+  canvas.height = 128;
+  const context = canvas.getContext("2d");
+  if (!context) {
+    throw new Error("Unable to create the sacoche glow texture.");
+  }
+
+  const gradient = context.createRadialGradient(64, 64, 12, 64, 64, 62);
+  gradient.addColorStop(0, "rgba(255,255,255,0)");
+  gradient.addColorStop(0.42, "rgba(255,255,255,0)");
+  gradient.addColorStop(0.68, "rgba(255,255,255,0.2)");
+  gradient.addColorStop(0.86, "rgba(255,255,255,0.1)");
+  gradient.addColorStop(1, "rgba(255,255,255,0)");
+
+  context.fillStyle = gradient;
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  return new THREE.CanvasTexture(canvas);
+}
+
+const glowTexture = createGlowTexture();
+
+function addModelGlow(model) {
+  model.updateWorldMatrix(true, true);
+  const bounds = new THREE.Box3().setFromObject(model);
+  const size = bounds.getSize(new THREE.Vector3());
+  const center = bounds.getCenter(new THREE.Vector3());
+  const worldScale = model.getWorldScale(new THREE.Vector3());
+  const localSize = new THREE.Vector3(
+    size.x / Math.max(Math.abs(worldScale.x), 0.0001),
+    size.y / Math.max(Math.abs(worldScale.y), 0.0001),
+    size.z / Math.max(Math.abs(worldScale.z), 0.0001)
+  );
+  const glow = new THREE.Sprite(
+    new THREE.SpriteMaterial({
+      map: glowTexture,
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0.8,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      toneMapped: false,
+    })
+  );
+
+  glow.position.copy(model.worldToLocal(center));
+  glow.scale.set(
+    Math.max(localSize.x * 2.4, localSize.y * 0.9),
+    Math.max(localSize.y * 1.8, localSize.x * 1.4),
+    1
+  );
+  glow.renderOrder = 1;
+  model.add(glow);
+}
+
 // ==========================================
 // CHARGEMENT DES MODÈLES 3D
 // ==========================================
@@ -321,8 +543,286 @@ const fbxLoader = new FBXLoader();
 
 const interactiveModels = [];
 const modelsRevealedByGrab = new Map();
+const deferredRevealMeshes = new Map();
+const deferredRevealLoads = new Map();
+const revealedModels = new WeakSet();
+const activeAnimationMixers = new Set();
+const ambientAnimationMixers = new Set();
+const cameraFacingFires = new Set();
+const activeWalks = new Map();
+const animationClock = new THREE.Clock();
+const SHEPHERD_WALK_DISTANCE = 2.2;
+const ANIMATION_CROSSFADE_DURATION = 0.45;
+let seatedViewActive = false;
 
-for (const mesh of meshes) {
+function enterSeatedView() {
+  if (!markerDetection.pcMode) return;
+
+  localFrame.quaternion.copy(SEATED_CAMERA_ROTATION);
+  localFrame.position.copy(SEATED_CAMERA_POSITION).sub(
+    camera.position.clone().applyQuaternion(localFrame.quaternion)
+  );
+  camera.quaternion.identity();
+  seatedViewActive = true;
+  renderEnabled = true;
+  lastMoved = performance.now();
+}
+
+function clampSeatedViewPitch() {
+  if (!seatedViewActive || !markerDetection.pcMode || xr.session) return;
+
+  const rotation = new THREE.Euler().setFromQuaternion(localFrame.quaternion, "YXZ");
+  rotation.x = THREE.MathUtils.clamp(
+    rotation.x,
+    -SEATED_MAX_LOOK_DOWN,
+    SEATED_MAX_LOOK_UP
+  );
+  localFrame.quaternion.setFromEuler(rotation);
+}
+
+function amplifyAnimationRotations(clip, factor) {
+  for (const track of clip.tracks) {
+    if (!track.name.endsWith(".quaternion") || track.getValueSize() !== 4) continue;
+
+    const values = track.values;
+    const reference = new THREE.Quaternion(
+      values[0],
+      values[1],
+      values[2],
+      values[3]
+    ).normalize();
+    const inverseReference = reference.clone().invert();
+
+    for (let index = 0; index < values.length; index += 4) {
+      const current = new THREE.Quaternion(
+        values[index],
+        values[index + 1],
+        values[index + 2],
+        values[index + 3]
+      ).normalize();
+      const delta = inverseReference.clone().multiply(current).normalize();
+      if (delta.w < 0) {
+        delta.set(-delta.x, -delta.y, -delta.z, -delta.w);
+      }
+
+      const halfAngle = Math.acos(THREE.MathUtils.clamp(delta.w, -1, 1));
+      const sinHalfAngle = Math.sin(halfAngle);
+      if (Math.abs(sinHalfAngle) < 1e-6) continue;
+
+      const axis = new THREE.Vector3(
+        delta.x / sinHalfAngle,
+        delta.y / sinHalfAngle,
+        delta.z / sinHalfAngle
+      );
+      delta.setFromAxisAngle(axis, halfAngle * 2 * factor);
+      current.copy(reference).multiply(delta).normalize();
+      values[index] = current.x;
+      values[index + 1] = current.y;
+      values[index + 2] = current.z;
+      values[index + 3] = current.w;
+    }
+  }
+}
+
+function stabilizeWalkRoot(clip) {
+  for (const track of clip.tracks) {
+    if (!track.name.endsWith(".position") || !track.name.includes("Hips")) continue;
+    const values = track.values;
+    if (track.getValueSize() !== 3 || values.length < 3) continue;
+
+    const initialY = values[1];
+    for (let index = 1; index < values.length; index += 3) {
+      values[index] = initialY;
+    }
+  }
+  return clip;
+}
+
+function configureAnimatedFire(model, config) {
+  const hiddenGeometry = new Set(config.hideGeometry ?? []);
+  model.traverse((child) => {
+    if (!child.isMesh) return;
+
+    const materials = Array.isArray(child.material)
+      ? child.material
+      : [child.material];
+
+    if (hiddenGeometry.has(child.name)) {
+      for (const material of materials) {
+        material.colorWrite = false;
+        material.depthWrite = false;
+      }
+      return;
+    }
+
+    child.material = materials.map((material) => new THREE.MeshBasicMaterial({
+      map: material.map ?? null,
+      alphaMap: material.alphaMap ?? null,
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0.5,
+      alphaTest: 0.1,
+      side: THREE.DoubleSide,
+      depthTest: false,
+      depthWrite: false,
+      blending: THREE.NormalBlending,
+      toneMapped: false,
+    }));
+    child.renderOrder = 100;
+    if (child.material.length === 1) child.material = child.material[0];
+  });
+}
+
+function updateCameraFacingFires(camera) {
+  const cameraPosition = camera.getWorldPosition(new THREE.Vector3());
+  for (const model of cameraFacingFires) {
+    const firePosition = model.getWorldPosition(new THREE.Vector3());
+    model.rotation.y = Math.atan2(
+      cameraPosition.x - firePosition.x,
+      cameraPosition.z - firePosition.z
+    );
+  }
+}
+
+function playAmbientAnimation(model, clipName) {
+  const clip = model.animations.find((animation) => animation.name === clipName);
+  if (!clip) {
+    console.warn(
+      `Animation "${clipName}" not found for ${model.userData.filename}. Available clips: ${model.animations.map((animation) => animation.name).join(", ")}`
+    );
+    return;
+  }
+
+  const mixer = new THREE.AnimationMixer(model);
+  const action = mixer.clipAction(clip);
+  action.setLoop(THREE.LoopRepeat, Infinity);
+  action.play();
+  ambientAnimationMixers.add(mixer);
+}
+
+function playShepherdAnimation(model) {
+  const clips = model.animations ?? [];
+  if (clips.length === 0) {
+    console.warn(`No animation clips found for ${model.userData.filename}`);
+    return;
+  }
+
+  const walkClip = clips.find((animation) =>
+    animation.name.toLocaleLowerCase().includes("walk")
+  );
+  const talkClip = clips.find((animation) =>
+    animation.name.toLocaleLowerCase().includes("parler en étant assis")
+  );
+  if (!walkClip) {
+    console.warn(
+      `Animation "walk.001" not found for ${model.userData.filename}. Available clips: ${clips.map((animation) => animation.name).join(", ")}`
+    );
+  }
+  if (!talkClip) {
+    console.warn(
+      `Animation "parler en étant assis.001" not found for ${model.userData.filename}. Available clips: ${clips.map((animation) => animation.name).join(", ")}`
+    );
+  }
+  if (!walkClip && !talkClip) return;
+
+  const finalPosition = model.position.clone();
+  const mixer = new THREE.AnimationMixer(model);
+  const walkAction = walkClip
+    ? mixer.clipAction(stabilizeWalkRoot(walkClip.clone()))
+    : null;
+  const visibleTalkClip = talkClip?.clone();
+  if (visibleTalkClip) amplifyAnimationRotations(visibleTalkClip, 6);
+  const talkAction = visibleTalkClip
+    ? mixer.clipAction(visibleTalkClip)
+    : null;
+
+  if (walkAction) {
+    const forward = new THREE.Vector3(0, 0, 1)
+      .applyQuaternion(model.quaternion)
+      .normalize();
+    const startPosition = finalPosition
+      .clone()
+      .addScaledVector(forward, -SHEPHERD_WALK_DISTANCE);
+    model.position.copy(startPosition);
+    walkAction.setLoop(THREE.LoopOnce, 1);
+    walkAction.clampWhenFinished = true;
+    activeWalks.set(mixer, {
+      model,
+      startPosition,
+      finalPosition,
+      elapsed: 0,
+      duration: walkClip.duration,
+    });
+    walkAction.play();
+  }
+
+  if (talkAction) {
+    talkAction.setLoop(THREE.LoopRepeat, 2);
+    talkAction.clampWhenFinished = true;
+
+    if (!walkAction) talkAction.play();
+
+    mixer.addEventListener("finished", (event) => {
+      if (event.action === walkAction) {
+        const walk = activeWalks.get(mixer);
+        if (walk) walk.model.position.copy(walk.finalPosition);
+        activeWalks.delete(mixer);
+
+        if (talkAction) {
+          talkAction
+            .crossFadeFrom(walkAction, ANIMATION_CROSSFADE_DURATION, false)
+            .play();
+          console.info(
+            `Shepherd reached destination; playing ${talkClip.name}`
+          );
+          return;
+        }
+      } else if (event.action !== talkAction) {
+        return;
+      }
+
+      activeWalks.delete(mixer);
+      activeAnimationMixers.delete(mixer);
+      mixer.stopAllAction();
+      mixer.uncacheRoot(model);
+      renderEnabled = true;
+      lastMoved = performance.now();
+    });
+  } else {
+    mixer.addEventListener("finished", () => {
+      activeWalks.delete(mixer);
+      activeAnimationMixers.delete(mixer);
+      mixer.stopAllAction();
+      mixer.uncacheRoot(model);
+      renderEnabled = true;
+      lastMoved = performance.now();
+    });
+  }
+
+  activeAnimationMixers.add(mixer);
+  console.info(
+    `Playing shepherd arrival: ${walkClip?.name ?? "walking unavailable"}${talkClip ? `, then ${talkClip.name} (rotations amplified 6x)` : ""}`
+  );
+}
+
+function startModelReveal(model, sourceModel = null) {
+  if (revealedModels.has(model)) return;
+  revealedModels.add(model);
+
+  playRevealFlash();
+  model.visible = true;
+  enterSeatedView();
+  playShepherdAnimation(model);
+  scheduleRevealSounds();
+  if (sourceModel) {
+    sourceModel.visible = false;
+    updateInteractionHighlights();
+  }
+  renderEnabled = true;
+  lastMoved = performance.now();
+}
+
+async function loadMesh(mesh) {
   try {
     const isFbx = mesh.filename.toLowerCase().endsWith(".fbx");
     const loader = isFbx ? fbxLoader : gltfLoader;
@@ -332,11 +832,14 @@ for (const mesh of meshes) {
     );
 
     const model = isFbx ? loaded : loaded.scene;
-
-    // Conversion des matériaux pour l'affichage
-    convertToBasicMaterials(model);
+    await waitForModelTextures(model);
 
     model.userData.filename = mesh.filename;
+    if (mesh.fireAnimation) {
+      configureAnimatedFire(model, mesh.fireAnimation);
+    } else {
+      convertToBasicMaterials(model);
+    }
 
     // Positionnement du modèle
     model.position.fromArray(
@@ -363,6 +866,13 @@ for (const mesh of meshes) {
     model.visible = mesh.visible ?? true;
 
     scene.add(model);
+    if (mesh.fireAnimation) {
+      playAmbientAnimation(model, mesh.fireAnimation.clip);
+      if (mesh.fireAnimation.faceCamera) {
+        cameraFacingFires.add(model);
+      }
+    }
+    if (mesh.glow) addModelGlow(model);
 
     // Gestion de l'interactivité
     if (mesh.interactive !== false) {
@@ -399,13 +909,33 @@ for (const mesh of meshes) {
     console.log(
       `Modèle chargé avec succès : ${mesh.filename}`
     );
-
+    return model;
   } catch (error) {
     console.warn(
       `Failed to load mesh: ${mesh.filename}`,
       error
     );
+    return null;
   }
+}
+
+for (const mesh of meshes) {
+  if (mesh.visible === false && mesh.revealOnGrab) {
+    const deferredMeshes = deferredRevealMeshes.get(mesh.revealOnGrab) ?? [];
+    deferredMeshes.push(mesh);
+    deferredRevealMeshes.set(mesh.revealOnGrab, deferredMeshes);
+    continue;
+  }
+
+  await loadMesh(mesh);
+}
+
+try {
+  await Promise.all(splatMeshes.map((splatMesh) => splatMesh.initialized));
+} catch (error) {
+  console.error("Failed to load the 3D scene.", error);
+  showLoadingError("Le chargement du monde a échoué. Vérifiez votre connexion, puis rechargez la page.");
+  throw error;
 }
 
 const interactionRaycaster = new THREE.Raycaster();
@@ -431,7 +961,20 @@ function findInteractiveModel(event) {
 
 function revealModelsFor(model) {
   for (const revealed of modelsRevealedByGrab.get(model.userData.filename) ?? []) {
-    revealed.visible = true;
+    startModelReveal(revealed, model);
+  }
+
+  for (const mesh of deferredRevealMeshes.get(model.userData.filename) ?? []) {
+    let loadPromise = deferredRevealLoads.get(mesh);
+    if (!loadPromise) {
+      loadPromise = loadMesh(mesh);
+      deferredRevealLoads.set(mesh, loadPromise);
+    }
+
+    loadPromise.then((revealed) => {
+      if (!revealed) return;
+      startModelReveal(revealed, model);
+    });
   }
 }
 
@@ -524,7 +1067,7 @@ function findXrInteractiveModel(controller) {
 
 function updateInteractionHighlights() {
   for (const { model, highlight } of interactiveModels) {
-    highlight.visible = model === hoveredModel || model === selectedModel;
+    highlight.visible = model.visible && (model === hoveredModel || model === selectedModel);
     if (highlight.visible) {
       model.updateWorldMatrix(true, true);
       highlight.update();
@@ -548,9 +1091,7 @@ function beginXrGrab(interactionController) {
     localPosition: new THREE.Vector3(0, 0, -0.08),
     localQuaternion: new THREE.Quaternion(),
   };
-  for (const model of modelsRevealedByGrab.get(hit.model.userData.filename) ?? []) {
-    model.visible = true;
-  }
+  revealModelsFor(hit.model);
   selectedModel = hit.model;
   hoveredModel = hit.model;
   updateInteractionHighlights();
@@ -667,6 +1208,7 @@ renderer.domElement.addEventListener("pointermove", (event) => {
 
 renderer.domElement.addEventListener("pointerup", (event) => {
   const wasGrabbing = pointerGrab !== null;
+  const grabbedModel = pointerGrab?.model ?? null;
   if (defaultRotateSpeed !== null) controls.pointerControls.rotateSpeed = defaultRotateSpeed;
   endPointerGrab();
   if (!interactionPointerStart) return;
@@ -677,7 +1219,7 @@ renderer.domElement.addEventListener("pointerup", (event) => {
   interactionPointerStart = null;
   if (wasGrabbing || movement > 6) return;
 
-  toggleInteractiveSelection(findInteractiveModel(event));
+  toggleInteractiveSelection(findInteractiveModel(event) ?? (wasGrabbing ? grabbedModel : null));
 });
 
 renderer.domElement.addEventListener("pointerleave", () => {
@@ -707,6 +1249,7 @@ window.addEventListener("resize", onWindowResize, false);
 
 let renderEnabled = true;
 let lastMoved = performance.now();
+let lastAmbientAnimationUpdate = 0;
 let lastPos = new THREE.Vector3().setScalar(Number.NEGATIVE_INFINITY);
 let lastDir = new THREE.Vector3();
 
@@ -719,6 +1262,7 @@ controls.pointerControls.slideSpeed *= 0.75;
 
 function updateMovement(xrFrame) {
   if (xr.session && xr.mode === "immersive-ar") {
+    movementPerimeter.visible = true;
     const referenceSpace = renderer.xr.getReferenceSpace();
     const viewerPose = referenceSpace && xrFrame?.getViewerPose(referenceSpace);
     if (!viewerPose) return;
@@ -753,16 +1297,19 @@ function updateMovement(xrFrame) {
   xrMovementCenter = null;
   xrMovementStart = null;
   xrMovementRotation = null;
-  movementPerimeter.position.set(SPAWN_POSITION.x, 0.015, SPAWN_POSITION.z);
-  const offsetX = localFrame.position.x - SPAWN_POSITION.x;
-  const offsetZ = localFrame.position.z - SPAWN_POSITION.z;
-  const distance = Math.hypot(offsetX, offsetZ);
-  if (distance > MOVEMENT_RADIUS) {
-    const scale = MOVEMENT_RADIUS / distance;
-    localFrame.position.x = SPAWN_POSITION.x + offsetX * scale;
-    localFrame.position.z = SPAWN_POSITION.z + offsetZ * scale;
+  movementPerimeter.visible = !markerDetection.pcMode;
+  if (!markerDetection.pcMode) {
+    movementPerimeter.position.set(SPAWN_POSITION.x, 0.015, SPAWN_POSITION.z);
+    const offsetX = localFrame.position.x - SPAWN_POSITION.x;
+    const offsetZ = localFrame.position.z - SPAWN_POSITION.z;
+    const distance = Math.hypot(offsetX, offsetZ);
+    if (distance > MOVEMENT_RADIUS) {
+      const scale = MOVEMENT_RADIUS / distance;
+      localFrame.position.x = SPAWN_POSITION.x + offsetX * scale;
+      localFrame.position.z = SPAWN_POSITION.z + offsetZ * scale;
+    }
   }
-  localFrame.position.y = SPAWN_POSITION.y;
+  if (!seatedViewActive) localFrame.position.y = SPAWN_POSITION.y;
 }
 
 const xrButton = document.getElementById("vr-button");
@@ -798,12 +1345,14 @@ const xr = new SparkXr({
   onEnterXr: () => {
     renderEnabled = true;
     lastMoved = performance.now();
+    movementPerimeter.visible = true;
     renderer.setClearAlpha(xr.mode === "immersive-ar" ? 0 : 1);
     xrButton.textContent = "Quitter AR";
   },
   onExitXr: () => {
     renderEnabled = true;
     lastMoved = performance.now();
+    movementPerimeter.visible = !markerDetection.pcMode;
     renderer.setClearAlpha(1);
     for (const interactionController of xrInteractionControllers) {
       interactionController.grabbed = null;
@@ -819,10 +1368,19 @@ const xr = new SparkXr({
 let lastMarkerCheck = 0;
 
 document.addEventListener("keydown", (event) => {
-  if (event.key === "\\") {
+  if (event.key.toLowerCase() === "p" || event.key === "\\") {
     const cameraPos = camera.getWorldPosition(new THREE.Vector3());
     const cameraQuat = camera.getWorldQuaternion(new THREE.Quaternion());
-    console.log("camera position: ", JSON.stringify(cameraPos.toArray()), "quaternion: ", JSON.stringify(cameraQuat.toArray()));
+    const coordinates = {
+      position: cameraPos.toArray().map((value) => Number(value.toFixed(3))),
+      quaternion: cameraQuat.toArray().map((value) => Number(value.toFixed(4))),
+    };
+    const coordinateReadout = document.getElementById("position-readout");
+    if (coordinateReadout) {
+      coordinateReadout.textContent = `Position : ${JSON.stringify(coordinates.position)} · Orientation : ${JSON.stringify(coordinates.quaternion)}`;
+      coordinateReadout.hidden = false;
+    }
+    console.info("Coordonnées de la caméra :", JSON.stringify(coordinates));
   }
 
   if (event.key.toLowerCase() === "o") {
@@ -839,6 +1397,39 @@ document.addEventListener("keydown", (event) => {
 });
 
 renderer.setAnimationLoop(function animate(time, xrFrame) {
+  const animationDelta = animationClock.getDelta();
+  let ambientAnimationFrame = false;
+  if (
+    ambientAnimationMixers.size > 0
+    && time - lastAmbientAnimationUpdate >= 50
+  ) {
+    const ambientDelta = lastAmbientAnimationUpdate === 0
+      ? animationDelta
+      : Math.min((time - lastAmbientAnimationUpdate) / 1000, 0.1);
+    for (const mixer of ambientAnimationMixers) {
+      mixer.update(ambientDelta);
+    }
+    lastAmbientAnimationUpdate = time;
+    ambientAnimationFrame = true;
+  }
+
+  for (const walk of activeWalks.values()) {
+    walk.elapsed = Math.min(walk.elapsed + animationDelta, walk.duration);
+    const progress = walk.duration > 0 ? walk.elapsed / walk.duration : 1;
+    walk.model.position.lerpVectors(
+      walk.startPosition,
+      walk.finalPosition,
+      progress
+    );
+  }
+  for (const mixer of activeAnimationMixers) {
+    mixer.update(animationDelta);
+  }
+  if (activeAnimationMixers.size > 0) {
+    renderEnabled = true;
+    lastMoved = performance.now();
+  }
+
   if (markerDetection.enabled && time - lastMarkerCheck >= 150) {
     lastMarkerCheck = time;
     const markerFound = detectMarkerFrame();
@@ -867,8 +1458,10 @@ renderer.setAnimationLoop(function animate(time, xrFrame) {
 
   xr.updateControllers(camera);
   controls.update(localFrame, camera);
+  clampSeatedViewPitch();
   updateMovement(xrFrame);
   updateXrInteraction();
+  updateCameraFacingFires(camera);
 
   const now = performance.now();
   const dir = localFrame.getWorldDirection(new THREE.Vector3());
@@ -882,8 +1475,11 @@ renderer.setAnimationLoop(function animate(time, xrFrame) {
     renderEnabled = false;
   }
 
-  if ((renderEnabled || xr.session) && renderer.domElement.style.display !== "none") {
+  if ((renderEnabled || xr.session || ambientAnimationFrame) && renderer.domElement.style.display !== "none") {
     renderer.render(scene, camera);
+    if (loadingOverlay && !loadingOverlay.hidden) {
+      loadingOverlay.hidden = true;
+    }
   }
 });
 
