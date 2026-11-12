@@ -65,7 +65,7 @@
       "category": "music",
       "spatial": false,
       "loop": true,
-      "volume": 0.15
+      "volume": 0.05
     },
     {
       "filename": "assets/Songs/foret.mp3",
