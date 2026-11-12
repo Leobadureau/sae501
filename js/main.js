@@ -8,6 +8,8 @@ import { SparkRenderer, SplatMesh, SparkControls, SparkXr, utils } from "@sparkj
 const RENDER_TIMEOUT_MS = 5 * 1000;
 const URL_BASE = ".";
 const MAX_PIXEL_RATIO = 1.5;
+const XR_SPLAT_BUDGET = 300000;
+const XR_HOVER_INTERVAL_MS = 50;
 const SPAWN_POSITION = new THREE.Vector3(0, 1.5, -3.9);
 const PC_CAMERA_HEIGHT_OFFSET = -0.15;
 const SEATED_CAMERA_POSITION = new THREE.Vector3(
@@ -47,7 +49,7 @@ const audioListener = new THREE.AudioListener();
 camera.add(audioListener);
 const autoStartSounds = [];
 const shepherdWalkSounds = [];
-const shepherdSeatedSounds = [];
+const shepherdSpeechSounds = [];
 const activeFootstepSounds = new Set();
 const revealSounds = [];
 const pendingTriggeredSounds = new Set();
@@ -188,10 +190,16 @@ function startShepherdFootsteps(model) {
   };
 }
 
-function startShepherdSpeech(model) {
-  for (const sound of shepherdSeatedSounds) {
+function attachShepherdSpeech(model) {
+  for (const sound of shepherdSpeechSounds) {
     model.add(sound);
     sound.position.set(0, 0.75, 0);
+  }
+}
+
+function startShepherdSpeech(model) {
+  attachShepherdSpeech(model);
+  for (const sound of shepherdSpeechSounds) {
     pendingTriggeredSounds.add(sound);
   }
   startReadySounds();
@@ -238,7 +246,7 @@ function setWorldVisible(visible) {
     for (const sound of [...autoStartSounds, ...shepherdWalkSounds]) {
       if (sound.isPlaying) sound.pause();
     }
-    for (const sound of [...shepherdSeatedSounds, ...revealSounds.map(({ sound }) => sound)]) {
+    for (const sound of [...shepherdSpeechSounds, ...revealSounds.map(({ sound }) => sound)]) {
       if (!sound.isPlaying) continue;
       sound.pause();
       pendingTriggeredSounds.add(sound);
@@ -418,8 +426,8 @@ for (const soundConfig of sounds) {
   scene.add(sound);
   if (soundConfig.trigger === "shepherdWalk") {
     shepherdWalkSounds.push(sound);
-  } else if (soundConfig.trigger === "shepherdSeated") {
-    shepherdSeatedSounds.push(sound);
+  } else if (soundConfig.trigger === "shepherdSpeech") {
+    shepherdSpeechSounds.push(sound);
   } else if (soundConfig.trigger === "shepherdReveal") {
     revealSounds.push({ sound, delayMs: soundConfig.delayMs ?? 0 });
   } else {
@@ -598,8 +606,6 @@ const fbxLoader = new FBXLoader();
 
 const interactiveModels = [];
 const modelsRevealedByGrab = new Map();
-const deferredRevealMeshes = new Map();
-const deferredRevealLoads = new Map();
 const revealedModels = new WeakSet();
 const activeAnimationMixers = new Set();
 const ambientAnimationMixers = new Set();
@@ -609,16 +615,25 @@ const animationClock = new THREE.Clock();
 const SHEPHERD_WALK_DISTANCE = 2.2;
 const ANIMATION_CROSSFADE_DURATION = 0.45;
 let seatedViewActive = false;
+let pendingSeatedTeleport = false;
+let desktopViewBeforeXr = null;
 
-function enterSeatedView() {
-  if (!markerDetection.pcMode) return;
-
+function applyDesktopSeatedView() {
   localFrame.quaternion.copy(SEATED_CAMERA_ROTATION);
   localFrame.position.copy(SEATED_CAMERA_POSITION).sub(
     camera.position.clone().applyQuaternion(localFrame.quaternion)
   );
   camera.quaternion.identity();
+}
+
+function enterSeatedView() {
   seatedViewActive = true;
+  if (renderer.xr.isPresenting) {
+    // WebXR owns the camera pose: move its parent on the next tracked frame.
+    pendingSeatedTeleport = true;
+  } else {
+    applyDesktopSeatedView();
+  }
   renderEnabled = true;
   lastMoved = performance.now();
 }
@@ -815,7 +830,6 @@ function playShepherdAnimation(model) {
       if (talkAction) {
         window.setTimeout(() => {
           stopFootsteps();
-          startShepherdSpeech(model);
         }, ANIMATION_CROSSFADE_DURATION * 1000);
       } else {
         stopFootsteps();
@@ -824,12 +838,11 @@ function playShepherdAnimation(model) {
   }
 
   if (talkAction) {
-    talkAction.setLoop(THREE.LoopRepeat, 2);
+    talkAction.setLoop(THREE.LoopRepeat, Infinity);
     talkAction.clampWhenFinished = true;
 
     if (!walkAction) {
       talkAction.play();
-      startShepherdSpeech(model);
     }
 
     mixer.addEventListener("finished", (event) => {
@@ -853,8 +866,7 @@ function playShepherdAnimation(model) {
 
       activeWalks.delete(mixer);
       activeAnimationMixers.delete(mixer);
-      mixer.stopAllAction();
-      mixer.uncacheRoot(model);
+      // Keep the final seated pose.
       renderEnabled = true;
       lastMoved = performance.now();
     });
@@ -883,6 +895,7 @@ function startModelReveal(model, sourceModel = null) {
   model.visible = true;
   enterSeatedView();
   playShepherdAnimation(model);
+  startShepherdSpeech(model);
   scheduleRevealSounds();
   if (sourceModel) {
     sourceModel.visible = false;
@@ -942,8 +955,6 @@ async function loadMesh(mesh) {
         cameraFacingFires.add(model);
       }
     }
-    if (mesh.glow) addModelGlow(model);
-
     // Gestion de l'interactivité
     if (mesh.interactive !== false) {
       const highlight = new THREE.BoxHelper(
@@ -959,9 +970,12 @@ async function loadMesh(mesh) {
 
       interactiveModels.push({
         model,
-        highlight
+        highlight,
+        bounds: new THREE.Box3().setFromObject(model)
+          .applyMatrix4(model.matrixWorld.clone().invert()),
       });
     }
+    if (mesh.glow) addModelGlow(model);
 
     // Gestion de l'apparition après récupération
     if (mesh.revealOnGrab) {
@@ -990,13 +1004,7 @@ async function loadMesh(mesh) {
 }
 
 for (const mesh of meshes) {
-  if (mesh.visible === false && mesh.revealOnGrab) {
-    const deferredMeshes = deferredRevealMeshes.get(mesh.revealOnGrab) ?? [];
-    deferredMeshes.push(mesh);
-    deferredRevealMeshes.set(mesh.revealOnGrab, deferredMeshes);
-    continue;
-  }
-
+  // Prepare hidden characters during loading, before entering the headset.
   await loadMesh(mesh);
 }
 
@@ -1011,6 +1019,9 @@ try {
 const interactionRaycaster = new THREE.Raycaster();
 interactionRaycaster.far = 10;
 const interactionPointer = new THREE.Vector2();
+const interactionLocalRay = new THREE.Ray();
+const interactionInverseMatrix = new THREE.Matrix4();
+const interactionHitPoint = new THREE.Vector3();
 let interactionPointerStart = null;
 let hoveredModel = null;
 let selectedModel = null;
@@ -1030,21 +1041,10 @@ function findInteractiveModel(event) {
 }
 
 function revealModelsFor(model) {
+  unlockSpatialAudio();
+
   for (const revealed of modelsRevealedByGrab.get(model.userData.filename) ?? []) {
     startModelReveal(revealed, model);
-  }
-
-  for (const mesh of deferredRevealMeshes.get(model.userData.filename) ?? []) {
-    let loadPromise = deferredRevealLoads.get(mesh);
-    if (!loadPromise) {
-      loadPromise = loadMesh(mesh);
-      deferredRevealLoads.set(mesh, loadPromise);
-    }
-
-    loadPromise.then((revealed) => {
-      if (!revealed) return;
-      startModelReveal(revealed, model);
-    });
   }
 }
 
@@ -1103,20 +1103,21 @@ function endPointerGrab() {
 }
 
 function findInteractiveHitAtRay() {
-  const intersections = interactionRaycaster.intersectObjects(
-    interactiveModels.map(({ model }) => model),
-    true
-  );
-  const intersection = intersections[0];
-  let object = intersection?.object;
-
-  while (object) {
-    const entry = interactiveModels.find(({ model }) => model === object);
-    if (entry) return { model: entry.model, point: intersection.point.clone() };
-    object = object.parent;
+  let closestHit = null;
+  let closestDistance = interactionRaycaster.far;
+  for (const { model, bounds } of interactiveModels) {
+    if (!model.visible) continue;
+    model.updateWorldMatrix(true, false);
+    interactionInverseMatrix.copy(model.matrixWorld).invert();
+    interactionLocalRay.copy(interactionRaycaster.ray).applyMatrix4(interactionInverseMatrix);
+    if (!interactionLocalRay.intersectBox(bounds, interactionHitPoint)) continue;
+    interactionHitPoint.applyMatrix4(model.matrixWorld);
+    const distance = interactionRaycaster.ray.origin.distanceTo(interactionHitPoint);
+    if (distance < interactionRaycaster.near || distance > closestDistance) continue;
+    closestDistance = distance;
+    closestHit = { model, point: interactionHitPoint.clone() };
   }
-
-  return null;
+  return closestHit;
 }
 
 function findInteractiveModelAtRay() {
@@ -1179,6 +1180,10 @@ function toggleXrGrab(interactionController) {
 function updateXrGrab(interactionController) {
   const { controller, grabbed } = interactionController;
   if (!grabbed || !grabbed.model.parent) return;
+  if (!grabbed.model.visible) {
+    interactionController.grabbed = null;
+    return;
+  }
 
   controller.updateWorldMatrix(true, false);
   const worldPosition = grabbed.localPosition.clone().applyMatrix4(controller.matrixWorld);
@@ -1233,7 +1238,9 @@ for (let index = 0; index < 2; index += 1) {
   localFrame.add(hand);
 }
 
-function updateXrInteraction() {
+let lastXrHoverUpdate = -Infinity;
+
+function updateXrInteraction(time) {
   if (!renderer.xr.isPresenting) {
     for (const interactionController of xrInteractionControllers) {
       interactionController.ray.visible = false;
@@ -1243,24 +1250,28 @@ function updateXrInteraction() {
   }
 
   let nextHoveredModel = null;
+  const updateHover = time - lastXrHoverUpdate >= XR_HOVER_INTERVAL_MS;
   for (const interactionController of xrInteractionControllers) {
     const { controller, ray, connected } = interactionController;
     ray.visible = connected;
     if (!connected) continue;
     updateXrGrab(interactionController);
-    nextHoveredModel ??= findXrInteractiveModel(controller);
+    if (updateHover) nextHoveredModel ??= findXrInteractiveModel(controller);
   }
-  hoveredModel = nextHoveredModel;
-  updateInteractionHighlights();
+  if (updateHover) {
+    lastXrHoverUpdate = time;
+    hoveredModel = nextHoveredModel;
+    updateInteractionHighlights();
+  }
 }
 
 let defaultRotateSpeed = null;
 
 renderer.domElement.addEventListener("pointerdown", (event) => {
   if (event.button !== 0) return;
-  interactionPointerStart = { x: event.clientX, y: event.clientY };
 
   const hit = findInteractiveHit(event);
+  interactionPointerStart = { x: event.clientX, y: event.clientY, model: hit?.model ?? null };
   if (hit) {
     defaultRotateSpeed ??= controls.pointerControls.rotateSpeed;
     beginPointerGrab(event, hit);
@@ -1277,8 +1288,8 @@ renderer.domElement.addEventListener("pointermove", (event) => {
 });
 
 renderer.domElement.addEventListener("pointerup", (event) => {
+  if (event.button !== 0) return;
   const wasGrabbing = pointerGrab !== null;
-  const grabbedModel = pointerGrab?.model ?? null;
   if (defaultRotateSpeed !== null) controls.pointerControls.rotateSpeed = defaultRotateSpeed;
   endPointerGrab();
   if (!interactionPointerStart) return;
@@ -1286,13 +1297,16 @@ renderer.domElement.addEventListener("pointerup", (event) => {
     event.clientX - interactionPointerStart.x,
     event.clientY - interactionPointerStart.y
   );
+  const startModel = interactionPointerStart.model;
   interactionPointerStart = null;
   if (wasGrabbing || movement > 6) return;
 
-  toggleInteractiveSelection(findInteractiveModel(event) ?? (wasGrabbing ? grabbedModel : null));
+  const model = findInteractiveModel(event);
+  if (model === startModel) toggleInteractiveSelection(model);
 });
 
 renderer.domElement.addEventListener("pointerleave", () => {
+  interactionPointerStart = null;
   if (defaultRotateSpeed !== null) controls.pointerControls.rotateSpeed = defaultRotateSpeed;
   endPointerGrab();
   hoveredModel = null;
@@ -1300,7 +1314,14 @@ renderer.domElement.addEventListener("pointerleave", () => {
   updateInteractionHighlights();
 });
 
+renderer.domElement.addEventListener("pointercancel", () => {
+  interactionPointerStart = null;
+  if (defaultRotateSpeed !== null) controls.pointerControls.rotateSpeed = defaultRotateSpeed;
+  endPointerGrab();
+});
+
 window.addEventListener("blur", () => {
+  interactionPointerStart = null;
   if (defaultRotateSpeed !== null) controls.pointerControls.rotateSpeed = defaultRotateSpeed;
   endPointerGrab();
 });
@@ -1331,13 +1352,31 @@ controls.pointerControls.rotateSpeed *= 2.0;
 controls.pointerControls.slideSpeed *= 0.75;
 
 function updateMovement(xrFrame) {
-  if (xr.session && xr.mode === "immersive-ar") {
+  if (renderer.xr.isPresenting) {
     movementPerimeter.visible = true;
     const referenceSpace = renderer.xr.getReferenceSpace();
     const viewerPose = referenceSpace && xrFrame?.getViewerPose(referenceSpace);
     if (!viewerPose) return;
 
     const viewerPosition = viewerPose.transform.position;
+    if (pendingSeatedTeleport) {
+      const orientation = viewerPose.transform.orientation;
+      const headRotation = new THREE.Euler().setFromQuaternion(
+        new THREE.Quaternion(orientation.x, orientation.y, orientation.z, orientation.w), "YXZ"
+      );
+      const targetRotation = new THREE.Euler().setFromQuaternion(SEATED_CAMERA_ROTATION, "YXZ");
+      // Align yaw only; pitch and roll continue to follow the person's head.
+      localFrame.rotation.set(0, targetRotation.y - headRotation.y, 0);
+      localFrame.position.copy(SEATED_CAMERA_POSITION).sub(
+        new THREE.Vector3(viewerPosition.x, viewerPosition.y, viewerPosition.z)
+          .applyQuaternion(localFrame.quaternion)
+      );
+      pendingSeatedTeleport = false;
+      xrMovementCenter = null;
+      xrMovementStart = null;
+      xrMovementRotation = null;
+      localFrame.updateWorldMatrix(true, true);
+    }
     if (!xrMovementCenter) {
       xrMovementCenter = new THREE.Vector3(viewerPosition.x, viewerPosition.y, viewerPosition.z);
       xrMovementStart = localFrame.position.clone();
@@ -1345,7 +1384,7 @@ function updateMovement(xrFrame) {
       const centerOffset = xrMovementCenter.clone().applyQuaternion(xrMovementRotation);
       movementPerimeter.position.set(
         xrMovementStart.x + centerOffset.x,
-        xrMovementStart.y + centerOffset.y - SPAWN_POSITION.y + 0.015,
+        0.015,
         xrMovementStart.z + centerOffset.z
       );
       return;
@@ -1413,6 +1452,20 @@ const xr = new SparkXr({
     }
   },
   onEnterXr: () => {
+    desktopViewBeforeXr = {
+      position: localFrame.position.clone(),
+      quaternion: localFrame.quaternion.clone(),
+      cameraPosition: camera.position.clone(),
+      cameraQuaternion: camera.quaternion.clone(),
+    };
+    pendingSeatedTeleport = seatedViewActive;
+    xrMovementCenter = null;
+    xrMovementStart = null;
+    xrMovementRotation = null;
+    lastXrHoverUpdate = -Infinity;
+    spark.lodSplatCount = XR_SPLAT_BUDGET;
+    spark.lodRenderScale = 1.5;
+    unlockSpatialAudio();
     renderEnabled = true;
     lastMoved = performance.now();
     movementPerimeter.visible = true;
@@ -1420,6 +1473,17 @@ const xr = new SparkXr({
     xrButton.textContent = "Quitter AR";
   },
   onExitXr: () => {
+    if (desktopViewBeforeXr) {
+      localFrame.position.copy(desktopViewBeforeXr.position);
+      localFrame.quaternion.copy(desktopViewBeforeXr.quaternion);
+      camera.position.copy(desktopViewBeforeXr.cameraPosition);
+      camera.quaternion.copy(desktopViewBeforeXr.cameraQuaternion);
+      desktopViewBeforeXr = null;
+    }
+    pendingSeatedTeleport = false;
+    if (seatedViewActive) applyDesktopSeatedView();
+    spark.lodSplatCount = undefined;
+    spark.lodRenderScale = 1;
     renderEnabled = true;
     lastMoved = performance.now();
     movementPerimeter.visible = !markerDetection.pcMode;
@@ -1432,7 +1496,10 @@ const xr = new SparkXr({
     xrMovementRotation = null;
     xrButton.textContent = "Entrer en AR";
   },
-  controllers: {},
+  // Head tracking and scripted teleportation control the view in the headset.
+  controllers: { moveSpeed: 0, rotateSpeed: 0, rollSpeed: 0 },
+  fixedFoveation: 0.5,
+  frameBufferScaleFactor: 0.5,
 });
 
 let lastMarkerCheck = 0;
@@ -1467,7 +1534,7 @@ document.addEventListener("keydown", (event) => {
 });
 
 renderer.setAnimationLoop(function animate(time, xrFrame) {
-  const animationDelta = animationClock.getDelta();
+  const animationDelta = Math.min(animationClock.getDelta(), 0.1);
   let ambientAnimationFrame = false;
   if (
     ambientAnimationMixers.size > 0
@@ -1526,11 +1593,10 @@ renderer.setAnimationLoop(function animate(time, xrFrame) {
     lastMoved = performance.now();
   }
 
-  xr.updateControllers(camera);
-  controls.update(localFrame, camera);
+  if (!renderer.xr.isPresenting) controls.update(localFrame, camera);
   clampSeatedViewPitch();
   updateMovement(xrFrame);
-  updateXrInteraction();
+  updateXrInteraction(time);
   updateCameraFacingFires(camera);
 
   const now = performance.now();

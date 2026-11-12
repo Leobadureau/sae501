@@ -23,9 +23,12 @@ Then open [http://localhost:8000](http://localhost:8000) in your browser.
 ## Controls
 
 - Allow camera access and point it at `assets/images/SCANNE.png`. The scene and the **Entrer en AR** button appear after the marker is detected.
-- In AR on Quest, point a controller at the comb and press its trigger to pick it up; press again to drop it. Strega appears when the comb is picked up.
+- In AR on Quest, point a controller at the bag and press its trigger. The shepherd appears, his voice starts, and the viewer teleports to the seated viewpoint, facing him.
+- Head tracking remains active after teleportation. The 2-meter movement perimeter follows the new viewpoint; controller sticks do not move or rotate the camera.
 - Enable hand tracking in the headset settings to display tracked hand models. Controller input remains available as well.
 - On supported devices, AR movement is limited to the visible 2-meter perimeter. WebXR support depends on the browser and device; use HTTPS for remote access.
+
+The scene uses `Sacoche1-optimized.glb` (59,990 triangles instead of 1,499,794); the original `Sacoche1.glb` is retained. Controller picking uses the bag's bounds, and the hidden shepherd loads before the experience starts. XR rendering uses a 300,000-splat budget and fixed foveation to reduce work on standalone headsets.
 
 ### Using Node.js
 

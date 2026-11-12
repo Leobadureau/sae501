@@ -39,7 +39,7 @@
       }
     },
     {
-      "filename": "assets/models/Sacoche1.glb",
+      "filename": "assets/models/Sacoche1-optimized.glb",
       "glow": true,
       "transform": {
         "translation": [1.5, 0.2, -6],
@@ -51,7 +51,7 @@
       "filename": "assets/models/old man 3d model/tripo_convert_ad709b62-a73c-451d-b686-15168f7a6180.fbx",
       "visible": false,
       "interactive": false,
-      "revealOnGrab": "assets/models/Sacoche1.glb",
+      "revealOnGrab": "assets/models/Sacoche1-optimized.glb",
       "transform": {
         "translation": [-1.5, 0.2, -9.3],
         "quaternion": [0, 0.4, 0, 0.7071],
@@ -88,7 +88,7 @@
     },
     {
       "filename": "assets/Songs/TEST_PAROLE.mp3",
-      "trigger": "shepherdSeated",
+      "trigger": "shepherdSpeech",
       "loop": false,
       "volume": 0.8,
       "refDistance": 1.2,
