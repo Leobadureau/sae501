@@ -61,6 +61,12 @@
   ],
   "sounds": [
     {
+      "filename": "assets/Songs/foret.mp3",
+      "spatial": false,
+      "loop": true,
+      "volume": 0.05
+    },
+    {
       "filename": "assets/Songs/Feu.mp3",
       "loop": true,
       "volume": 0.7,
@@ -70,6 +76,24 @@
       "transform": {
         "translation": [0.343, 1.5, -8.428]
       }
+    },
+    {
+      "filename": "assets/Songs/Pas.wav",
+      "trigger": "shepherdWalk",
+      "loop": true,
+      "volume": 0.7,
+      "refDistance": 2,
+      "maxDistance": 18,
+      "rolloffFactor": 1
+    },
+    {
+      "filename": "assets/Songs/TEST_PAROLE.mp3",
+      "trigger": "shepherdSeated",
+      "loop": false,
+      "volume": 0.8,
+      "refDistance": 1.2,
+      "maxDistance": 18,
+      "rolloffFactor": 1
     },
     {
       "filename": "assets/Songs/chien.wav",

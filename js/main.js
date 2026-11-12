@@ -45,11 +45,15 @@ scene.add(movementPerimeter);
 const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 1000);
 const audioListener = new THREE.AudioListener();
 camera.add(audioListener);
-const positionalSounds = [];
+const autoStartSounds = [];
+const shepherdWalkSounds = [];
+const shepherdSeatedSounds = [];
+const activeFootstepSounds = new Set();
 const revealSounds = [];
-const pendingRevealSounds = new Set();
+const pendingTriggeredSounds = new Set();
 let revealSoundsScheduled = false;
 let audioHasUserGesture = false;
+let worldAudioEnabled = false;
 const renderer = new THREE.WebGLRenderer({ alpha: true });
 renderer.setClearColor(0x000000, 0);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, MAX_PIXEL_RATIO));
@@ -135,7 +139,8 @@ function showLoadingError(message) {
   if (loadingSpinner) loadingSpinner.hidden = true;
 }
 
-function enterPcMode() {
+function enterPcMode(event) {
+  if (event) unlockSpatialAudio();
   markerDetection.pcMode = true;
   markerDetection.locked = true;
   markerDetection.enabled = false;
@@ -153,15 +158,43 @@ function enterPcMode() {
 }
 
 function startReadySounds() {
-  if (audioListener.context.state !== "running") return;
-  for (const sound of positionalSounds) {
+  if (!worldAudioEnabled || !audioHasUserGesture || audioListener.context.state !== "running") return;
+  for (const sound of autoStartSounds) {
     if (sound.buffer && !sound.isPlaying) sound.play();
   }
-  for (const sound of pendingRevealSounds) {
+  for (const sound of activeFootstepSounds) {
+    if (sound.buffer && !sound.isPlaying) sound.play();
+  }
+  for (const sound of pendingTriggeredSounds) {
     if (!sound.buffer) continue;
     if (!sound.isPlaying) sound.play();
-    pendingRevealSounds.delete(sound);
+    pendingTriggeredSounds.delete(sound);
   }
+}
+
+function startShepherdFootsteps(model) {
+  for (const sound of shepherdWalkSounds) {
+    model.add(sound);
+    sound.position.set(0, 0, 0);
+    activeFootstepSounds.add(sound);
+  }
+  startReadySounds();
+
+  return () => {
+    for (const sound of shepherdWalkSounds) {
+      activeFootstepSounds.delete(sound);
+      if (sound.isPlaying) sound.stop();
+    }
+  };
+}
+
+function startShepherdSpeech(model) {
+  for (const sound of shepherdSeatedSounds) {
+    model.add(sound);
+    sound.position.set(0, 0.75, 0);
+    pendingTriggeredSounds.add(sound);
+  }
+  startReadySounds();
 }
 
 function scheduleRevealSounds() {
@@ -169,7 +202,7 @@ function scheduleRevealSounds() {
   revealSoundsScheduled = true;
   for (const { sound, delayMs } of revealSounds) {
     window.setTimeout(() => {
-      pendingRevealSounds.add(sound);
+      pendingTriggeredSounds.add(sound);
       startReadySounds();
     }, delayMs);
   }
@@ -186,17 +219,31 @@ function unlockSpatialAudio() {
   startReadySounds();
 }
 
-document.addEventListener("pointerdown", unlockSpatialAudio);
-document.addEventListener("keydown", unlockSpatialAudio);
+renderer.domElement.addEventListener("pointerdown", unlockSpatialAudio);
+document.addEventListener("keydown", () => {
+  if (worldAudioEnabled) unlockSpatialAudio();
+});
 
 pcModeButton?.addEventListener("click", enterPcMode);
 pcModeInOverlay?.addEventListener("click", enterPcMode);
 arModeButton?.addEventListener("click", () => {
+  unlockSpatialAudio();
   if (modeOverlay) modeOverlay.hidden = true;
   setupMarkerDetection();
 });
 
 function setWorldVisible(visible) {
+  if (!visible) {
+    worldAudioEnabled = false;
+    for (const sound of [...autoStartSounds, ...shepherdWalkSounds]) {
+      if (sound.isPlaying) sound.pause();
+    }
+    for (const sound of [...shepherdSeatedSounds, ...revealSounds.map(({ sound }) => sound)]) {
+      if (!sound.isPlaying) continue;
+      sound.pause();
+      pendingTriggeredSounds.add(sound);
+    }
+  }
   renderer.domElement.style.display = visible ? "block" : "none";
   if (markerDetection.video) {
     markerDetection.video.style.display = "block";
@@ -356,19 +403,27 @@ for (const splat of splats) {
 
 const audioLoader = new THREE.AudioLoader();
 for (const soundConfig of sounds) {
-  const sound = new THREE.PositionalAudio(audioListener);
+  const sound = soundConfig.spatial === false
+    ? new THREE.Audio(audioListener)
+    : new THREE.PositionalAudio(audioListener);
   sound.setLoop(soundConfig.loop ?? true);
   sound.setVolume(soundConfig.volume ?? 1);
-  sound.setRefDistance(soundConfig.refDistance ?? 1);
-  sound.setMaxDistance(soundConfig.maxDistance ?? 100);
-  sound.setRolloffFactor(soundConfig.rolloffFactor ?? 1);
-  sound.setDistanceModel("inverse");
-  sound.position.fromArray(soundConfig.transform?.translation ?? [0, 0, 0]);
+  if (soundConfig.spatial !== false) {
+    sound.setRefDistance(soundConfig.refDistance ?? 1);
+    sound.setMaxDistance(soundConfig.maxDistance ?? 100);
+    sound.setRolloffFactor(soundConfig.rolloffFactor ?? 1);
+    sound.setDistanceModel("inverse");
+    sound.position.fromArray(soundConfig.transform?.translation ?? [0, 0, 0]);
+  }
   scene.add(sound);
-  if (soundConfig.trigger === "shepherdReveal") {
+  if (soundConfig.trigger === "shepherdWalk") {
+    shepherdWalkSounds.push(sound);
+  } else if (soundConfig.trigger === "shepherdSeated") {
+    shepherdSeatedSounds.push(sound);
+  } else if (soundConfig.trigger === "shepherdReveal") {
     revealSounds.push({ sound, delayMs: soundConfig.delayMs ?? 0 });
   } else {
-    positionalSounds.push(sound);
+    autoStartSounds.push(sound);
   }
 
   audioLoader
@@ -754,13 +809,28 @@ function playShepherdAnimation(model) {
       duration: walkClip.duration,
     });
     walkAction.play();
+    const stopFootsteps = startShepherdFootsteps(model);
+    mixer.addEventListener("finished", (event) => {
+      if (event.action !== walkAction) return;
+      if (talkAction) {
+        window.setTimeout(() => {
+          stopFootsteps();
+          startShepherdSpeech(model);
+        }, ANIMATION_CROSSFADE_DURATION * 1000);
+      } else {
+        stopFootsteps();
+      }
+    });
   }
 
   if (talkAction) {
     talkAction.setLoop(THREE.LoopRepeat, 2);
     talkAction.clampWhenFinished = true;
 
-    if (!walkAction) talkAction.play();
+    if (!walkAction) {
+      talkAction.play();
+      startShepherdSpeech(model);
+    }
 
     mixer.addEventListener("finished", (event) => {
       if (event.action === walkAction) {
@@ -1479,6 +1549,10 @@ renderer.setAnimationLoop(function animate(time, xrFrame) {
     renderer.render(scene, camera);
     if (loadingOverlay && !loadingOverlay.hidden) {
       loadingOverlay.hidden = true;
+    }
+    if (!worldAudioEnabled) {
+      worldAudioEnabled = true;
+      startReadySounds();
     }
   }
 });
