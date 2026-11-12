@@ -399,7 +399,7 @@ if (startInPcMode) {
 
 let sceneJson;
 try {
-  const response = await fetch(`${URL_BASE}/data/scene.json`);
+  const response = await fetch(`${URL_BASE}/data/scene.json`, { cache: "no-cache" });
   if (!response.ok) {
     throw new Error(`Scene manifest request failed with status ${response.status}`);
   }
