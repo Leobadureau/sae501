@@ -48,6 +48,8 @@ const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerH
 const audioListener = new THREE.AudioListener();
 camera.add(audioListener);
 const autoStartSounds = [];
+const musicSounds = [];
+let musicMuted = false;
 const shepherdWalkSounds = [];
 const shepherdSpeechSounds = [];
 const activeFootstepSounds = new Set();
@@ -85,6 +87,7 @@ const revealFlash = document.getElementById("reveal-flash");
 const pcModeButton = document.getElementById("pc-mode");
 const arModeButton = document.getElementById("ar-mode");
 const pcModeInOverlay = document.getElementById("pc-mode-from-camera");
+const musicToggle = document.getElementById("music-toggle");
 const markerDetection = {
   pcMode: false,
   enabled: false,
@@ -230,6 +233,15 @@ function unlockSpatialAudio() {
 }
 
 renderer.domElement.addEventListener("pointerdown", unlockSpatialAudio);
+musicToggle?.addEventListener("click", () => {
+  musicMuted = !musicMuted;
+  for (const { sound, volume } of musicSounds) {
+    sound.setVolume(musicMuted ? 0 : volume);
+  }
+  musicToggle.setAttribute("aria-pressed", String(musicMuted));
+  musicToggle.textContent = musicMuted ? "Activer la musique" : "Couper la musique";
+  unlockSpatialAudio();
+});
 document.addEventListener("keydown", () => {
   if (worldAudioEnabled) unlockSpatialAudio();
 });
@@ -245,6 +257,7 @@ arModeButton?.addEventListener("click", () => {
 function setWorldVisible(visible) {
   if (!visible) {
     worldAudioEnabled = false;
+    if (musicToggle) musicToggle.hidden = true;
     for (const sound of [...autoStartSounds, ...shepherdWalkSounds]) {
       if (sound.isPlaying) sound.pause();
     }
@@ -418,6 +431,10 @@ for (const soundConfig of sounds) {
     : new THREE.PositionalAudio(audioListener);
   sound.setLoop(soundConfig.loop ?? true);
   sound.setVolume(soundConfig.volume ?? 1);
+  if (soundConfig.category === "music") {
+    musicSounds.push({ sound, volume: soundConfig.volume ?? 1 });
+    if (musicMuted) sound.setVolume(0);
+  }
   if (soundConfig.spatial !== false) {
     sound.setRefDistance(soundConfig.refDistance ?? 1);
     sound.setMaxDistance(soundConfig.maxDistance ?? 100);
@@ -1616,6 +1633,7 @@ renderer.setAnimationLoop(function animate(time, xrFrame) {
     }
     if (!worldAudioEnabled) {
       worldAudioEnabled = true;
+      if (musicToggle) musicToggle.hidden = false;
       startReadySounds();
     }
   }

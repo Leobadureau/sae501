@@ -300,6 +300,25 @@ canvas {
 
 /* BOUTONS XR */
 
+.music-toggle {
+  position: absolute;
+  top: max(16px, env(safe-area-inset-top));
+  left: max(16px, env(safe-area-inset-left));
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 6px;
+  background: var(--panel-bg);
+  color: var(--text-color);
+  font: 13px sans-serif;
+  cursor: pointer;
+  touch-action: manipulation;
+  pointer-events: auto;
+}
+
+.music-toggle[hidden] {
+  display: none;
+}
+
 .xr-button {
   position: absolute;
   right: max(20px, env(safe-area-inset-right));

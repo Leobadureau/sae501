@@ -61,6 +61,13 @@
   ],
   "sounds": [
     {
+      "filename": "assets/Songs/Theme.mp3",
+      "category": "music",
+      "spatial": false,
+      "loop": true,
+      "volume": 0.035
+    },
+    {
       "filename": "assets/Songs/foret.mp3",
       "spatial": false,
       "loop": true,
