@@ -8,7 +8,7 @@ import { SparkRenderer, SplatMesh, SparkControls, SparkXr, utils } from "@sparkj
 const RENDER_TIMEOUT_MS = 5 * 1000;
 const URL_BASE = ".";
 const MAX_PIXEL_RATIO = 1.5;
-const XR_SPLAT_BUDGET = 300000;
+const XR_SPLAT_BUDGET = 1000000;
 const XR_HOVER_INTERVAL_MS = 50;
 const SPAWN_POSITION = new THREE.Vector3(0, 1.5, -3.9);
 const PC_CAMERA_HEIGHT_OFFSET = -0.15;
@@ -1464,7 +1464,7 @@ const xr = new SparkXr({
     xrMovementRotation = null;
     lastXrHoverUpdate = -Infinity;
     spark.lodSplatCount = XR_SPLAT_BUDGET;
-    spark.lodRenderScale = 1.5;
+    spark.lodRenderScale = 1;
     unlockSpatialAudio();
     renderEnabled = true;
     lastMoved = performance.now();
@@ -1498,8 +1498,8 @@ const xr = new SparkXr({
   },
   // Head tracking and scripted teleportation control the view in the headset.
   controllers: { moveSpeed: 0, rotateSpeed: 0, rollSpeed: 0 },
-  fixedFoveation: 0.5,
-  frameBufferScaleFactor: 0.5,
+  fixedFoveation: 0,
+  frameBufferScaleFactor: 1,
 });
 
 let lastMarkerCheck = 0;

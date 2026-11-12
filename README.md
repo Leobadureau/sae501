@@ -28,7 +28,7 @@ Then open [http://localhost:8000](http://localhost:8000) in your browser.
 - Enable hand tracking in the headset settings to display tracked hand models. Controller input remains available as well.
 - On supported devices, AR movement is limited to the visible 2-meter perimeter. WebXR support depends on the browser and device; use HTTPS for remote access.
 
-The scene uses `Sacoche1-optimized.glb` (59,990 triangles instead of 1,499,794); the original `Sacoche1.glb` is retained. Controller picking uses the bag's bounds, and the hidden shepherd loads before the experience starts. XR rendering uses a 300,000-splat budget and fixed foveation to reduce work on standalone headsets.
+The scene uses `Sacoche1-optimized.glb` (59,990 triangles instead of 1,499,794); the original `Sacoche1.glb` is retained. Controller picking uses the bag's bounds, and the hidden shepherd loads before the experience starts. XR rendering prioritizes image quality: full recommended framebuffer resolution, no compositor foveation, a 1,000,000-splat budget, and the same minimum splat pixel size as desktop.
 
 ### Using Node.js
 
