@@ -8,7 +8,7 @@ import { SparkRenderer, SplatMesh, SparkControls, SparkXr, utils } from "@sparkj
 const RENDER_TIMEOUT_MS = 5 * 1000;
 const URL_BASE = ".";
 const MAX_PIXEL_RATIO = 1.5;
-const XR_SPLAT_BUDGET = 1000000;
+const XR_RENDER_SCALE = 1.5;
 const XR_HOVER_INTERVAL_MS = 50;
 const SPAWN_POSITION = new THREE.Vector3(0, 1.5, -3.9);
 const PC_CAMERA_HEIGHT_OFFSET = -0.15;
@@ -70,6 +70,8 @@ localFrame.position.copy(SPAWN_POSITION);
 const spark = new SparkRenderer({
   renderer,
   maxStdDev: Math.sqrt(5),
+  // Use the original scene in both modes, without device-dependent detail reduction.
+  enableLod: false,
 });
 scene.add(spark);
 localFrame.add(camera);
@@ -400,7 +402,7 @@ const sounds = sceneJson.sounds ?? [];
 const splatMeshes = [];
 
 for (const splat of splats) {
-  const splatMesh = new SplatMesh({ url: `${URL_BASE}/${splat.filename}`, lod: true });
+  const splatMesh = new SplatMesh({ url: `${URL_BASE}/${splat.filename}`, lod: false });
   splatMesh.position.fromArray(splat.transform?.translation ?? [0, 0, 0]);
   splatMesh.quaternion.fromArray(splat.transform?.quaternion ?? [0, 0, 0, 1]);
   const scale = splat.transform?.scale ?? 1;
@@ -1463,8 +1465,6 @@ const xr = new SparkXr({
     xrMovementStart = null;
     xrMovementRotation = null;
     lastXrHoverUpdate = -Infinity;
-    spark.lodSplatCount = XR_SPLAT_BUDGET;
-    spark.lodRenderScale = 1;
     unlockSpatialAudio();
     renderEnabled = true;
     lastMoved = performance.now();
@@ -1482,8 +1482,6 @@ const xr = new SparkXr({
     }
     pendingSeatedTeleport = false;
     if (seatedViewActive) applyDesktopSeatedView();
-    spark.lodSplatCount = undefined;
-    spark.lodRenderScale = 1;
     renderEnabled = true;
     lastMoved = performance.now();
     movementPerimeter.visible = !markerDetection.pcMode;
@@ -1499,7 +1497,7 @@ const xr = new SparkXr({
   // Head tracking and scripted teleportation control the view in the headset.
   controllers: { moveSpeed: 0, rotateSpeed: 0, rollSpeed: 0 },
   fixedFoveation: 0,
-  frameBufferScaleFactor: 1,
+  frameBufferScaleFactor: XR_RENDER_SCALE,
 });
 
 let lastMarkerCheck = 0;
