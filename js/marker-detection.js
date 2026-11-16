@@ -22,6 +22,7 @@ const MARKER_TEMPLATE_WIDTH = 24;
 const MIN_MARKER_HEIGHT = 32;
 const MARKER_SCAN_STEP = 4;
 const MARKER_SCALE_STEP = 6;
+const REQUIRED_MARKER_CONFIRMATIONS = 4;
 
 export function createMarkerDetection({ markerOverlay, renderer, setWorldVisible, enterPcMode }) {
   const state = {
@@ -34,7 +35,8 @@ export function createMarkerDetection({ markerOverlay, renderer, setWorldVisible
     context: null,
     markerTemplate: null,
     markerAspectRatio: null,
-    threshold: 0.55,
+    pendingMatch: null,
+    threshold: 0.76,
   };
 
   function updateOverlay(visible) {
@@ -47,6 +49,7 @@ export function createMarkerDetection({ markerOverlay, renderer, setWorldVisible
     state.stream = null;
     state.video = null;
     state.enabled = false;
+    state.pendingMatch = null;
   }
 
   function showCameraFallback(message) {
@@ -133,6 +136,8 @@ export function createMarkerDetection({ markerOverlay, renderer, setWorldVisible
     const templateWidth = MARKER_TEMPLATE_WIDTH;
     const templateHeight = values.length / templateWidth;
     const sampleCount = values.length;
+    const minimumTextureVariance = sampleCount * 64;
+    let bestMatch = null;
     const maxMarkerHeight = Math.min(
       frameHeight,
       Math.floor(frameWidth / state.markerAspectRatio)
@@ -162,13 +167,39 @@ export function createMarkerDetection({ markerOverlay, renderer, setWorldVisible
           }
 
           const patchNormSquared = sumSquared - (sum * sum) / sampleCount;
-          if (patchNormSquared === 0) continue;
+          if (patchNormSquared < minimumTextureVariance) continue;
           const similarity = dot / Math.sqrt(patchNormSquared * normSquared);
-          if (similarity >= threshold) return true;
+          if (!bestMatch || similarity > bestMatch.similarity) {
+            bestMatch = { left, top, width: markerWidth, height: markerHeight, similarity };
+          }
         }
       }
     }
-    return false;
+
+    if (!bestMatch || bestMatch.similarity < threshold) {
+      state.pendingMatch = null;
+      return false;
+    }
+
+    const previousMatch = state.pendingMatch;
+    const sameMatch = previousMatch
+      && Math.hypot(
+        (bestMatch.left + bestMatch.width / 2) - previousMatch.centerX,
+        (bestMatch.top + bestMatch.height / 2) - previousMatch.centerY
+      ) <= Math.max(6, bestMatch.height * 0.14)
+      && Math.abs(bestMatch.height - previousMatch.height) <= Math.max(
+        MARKER_SCALE_STEP * 1.5,
+        previousMatch.height * 0.2
+      );
+
+    state.pendingMatch = {
+      centerX: bestMatch.left + bestMatch.width / 2,
+      centerY: bestMatch.top + bestMatch.height / 2,
+      height: bestMatch.height,
+      confirmations: sameMatch ? previousMatch.confirmations + 1 : 1,
+    };
+
+    return state.pendingMatch.confirmations >= REQUIRED_MARKER_CONFIRMATIONS;
   }
 
   return { state, setup, detectFrame, updateOverlay, stop };

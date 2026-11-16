@@ -4,7 +4,7 @@ import { FBXLoader } from "three/addons/loaders/FBXLoader.js";
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { SplatMesh, SparkControls, SparkXr, utils } from "@sparkjsdev/spark";
 import { addModelGlow, convertToBasicMaterials, waitForModelTextures } from "./model-materials.js";
-import { createMarkerDetection } from "./marker-detection.js";
+import { createMarkerDetection } from "./marker-detection.js?v=card-scan-confirmation-20261116";
 import { createAudioSystem } from "./audio.js";
 import { createInteractionSystem } from "./interactions.js";
 import {
