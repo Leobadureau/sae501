@@ -59,6 +59,18 @@ export function createMarkerDetection({ markerOverlay, renderer, setWorldVisible
     document.getElementById("pc-mode-from-camera")?.addEventListener("click", enterPcMode);
   }
 
+  function getCameraFallbackMessage(error) {
+    if (error?.name === "NotAllowedError" || error?.name === "SecurityError") {
+      return "Autorisez l’accès à la caméra extérieure pour scanner la carte, ou";
+    }
+
+    if (/OculusBrowser|Quest/i.test(navigator.userAgent)) {
+      return "Le navigateur Quest ne donne pas accès à la caméra extérieure pour scanner la carte. Il faut une application Quest native, ou";
+    }
+
+    return "Caméra extérieure indisponible. Ouvrez la page sur un appareil avec une caméra arrière, ou";
+  }
+
   async function setup() {
     if (state.locked) {
       renderer.setClearAlpha(1);
@@ -100,7 +112,7 @@ export function createMarkerDetection({ markerOverlay, renderer, setWorldVisible
 
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
-          facingMode: { ideal: "environment" },
+          facingMode: { exact: "environment" },
           width: { ideal: 1280 },
           height: { ideal: 720 },
           aspectRatio: { ideal: 16 / 9 },
@@ -118,7 +130,7 @@ export function createMarkerDetection({ markerOverlay, renderer, setWorldVisible
       if (zoomRange && Number.isFinite(zoomRange.min)) {
         try {
           await videoTrack.applyConstraints({
-            facingMode: { ideal: "environment" },
+            facingMode: { exact: "environment" },
             width: { ideal: 1280 },
             height: { ideal: 720 },
             aspectRatio: { ideal: 16 / 9 },
@@ -150,7 +162,7 @@ export function createMarkerDetection({ markerOverlay, renderer, setWorldVisible
     } catch (error) {
       console.warn("Marker detection unavailable; keeping world hidden.", error);
       stop();
-      showCameraFallback("Autorisez l’accès à la caméra pour scanner Carte_Berger.jpg, ou");
+      showCameraFallback(getCameraFallbackMessage(error));
     }
   }
 
