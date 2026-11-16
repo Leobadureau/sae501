@@ -91,7 +91,11 @@ export function createMarkerDetection({ markerOverlay, renderer, setWorldVisible
       state.markerAspectRatio = markerImage.naturalWidth / markerImage.naturalHeight;
 
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "environment" },
+        video: {
+          facingMode: { ideal: "environment" },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+        },
         audio: false,
       });
       if (state.pcMode || state.locked) {
