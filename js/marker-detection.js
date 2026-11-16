@@ -19,7 +19,7 @@ function createMarkerTemplate(imageData) {
 }
 
 const MARKER_TEMPLATE_WIDTH = 36;
-const MIN_MARKER_HEIGHT = 40;
+const MIN_MARKER_HEIGHT = 28;
 const MARKER_SCAN_STEP = 4;
 const MARKER_SCALE_STEP = 6;
 const REQUIRED_MARKER_CONFIRMATIONS = 4;
@@ -36,7 +36,7 @@ export function createMarkerDetection({ markerOverlay, renderer, setWorldVisible
     markerTemplate: null,
     markerAspectRatio: null,
     pendingMatch: null,
-    threshold: 0.74,
+    threshold: 0.6,
   };
 
   function updateOverlay(visible) {
@@ -99,7 +99,11 @@ export function createMarkerDetection({ markerOverlay, renderer, setWorldVisible
       );
 
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: "environment" } },
+        video: {
+          facingMode: { ideal: "environment" },
+          aspectRatio: { ideal: 16 / 9 },
+          resizeMode: { ideal: "none" },
+        },
         audio: false,
       });
       if (state.pcMode || state.locked) {
@@ -111,7 +115,12 @@ export function createMarkerDetection({ markerOverlay, renderer, setWorldVisible
       const zoomRange = videoTrack.getCapabilities?.().zoom;
       if (zoomRange && Number.isFinite(zoomRange.min)) {
         try {
-          await videoTrack.applyConstraints({ advanced: [{ zoom: zoomRange.min }] });
+          await videoTrack.applyConstraints({
+            facingMode: { ideal: "environment" },
+            aspectRatio: { ideal: 16 / 9 },
+            resizeMode: { ideal: "none" },
+            advanced: [{ zoom: zoomRange.min }],
+          });
         } catch (error) {
           console.info("Camera zoom could not be adjusted by the browser.", error);
         }
