@@ -152,7 +152,7 @@ export function createMarkerDetection({ markerOverlay, renderer, setWorldVisible
       document.body.appendChild(video);
       await video.play();
 
-      const frameScale = 120 / Math.max(video.videoWidth || 160, video.videoHeight || 120);
+      const frameScale = 160 / Math.max(video.videoWidth || 160, video.videoHeight || 120);
       state.canvas.width = Math.round((video.videoWidth || 160) * frameScale);
       state.canvas.height = Math.round((video.videoHeight || 120) * frameScale);
       state.context = state.canvas.getContext("2d", { willReadFrequently: true });
@@ -180,19 +180,45 @@ export function createMarkerDetection({ markerOverlay, renderer, setWorldVisible
     const sampleCount = values.length;
     const minimumTextureVariance = sampleCount * 64;
     let bestMatch = null;
+    const previousMatch = state.pendingMatch;
     const maxMarkerHeight = Math.min(
       frameHeight,
       Math.floor(frameWidth / state.markerAspectRatio)
     );
+    const heightSearchRadius = previousMatch
+      ? Math.max(MARKER_SCALE_STEP * 2, previousMatch.height * 0.2)
+      : 0;
+    const minMarkerHeight = previousMatch
+      ? Math.max(MIN_MARKER_HEIGHT, Math.floor(previousMatch.height - heightSearchRadius))
+      : MIN_MARKER_HEIGHT;
+    const maxSearchMarkerHeight = previousMatch
+      ? Math.min(maxMarkerHeight, Math.ceil(previousMatch.height + heightSearchRadius))
+      : maxMarkerHeight;
 
-    for (let markerHeight = MIN_MARKER_HEIGHT;
-      markerHeight <= maxMarkerHeight;
+    for (let markerHeight = minMarkerHeight;
+      markerHeight <= maxSearchMarkerHeight;
       markerHeight += MARKER_SCALE_STEP) {
       const markerWidth = Math.round(markerHeight * state.markerAspectRatio);
       if (markerWidth < 1 || markerWidth > frameWidth) continue;
 
-      for (let top = 0; top <= frameHeight - markerHeight; top += MARKER_SCAN_STEP) {
-        for (let left = 0; left <= frameWidth - markerWidth; left += MARKER_SCAN_STEP) {
+      const positionSearchRadius = previousMatch
+        ? Math.max(12, markerHeight * 0.28)
+        : 0;
+      const minTop = previousMatch
+        ? Math.max(0, Math.floor(previousMatch.centerY - markerHeight / 2 - positionSearchRadius))
+        : 0;
+      const maxTop = previousMatch
+        ? Math.min(frameHeight - markerHeight, Math.ceil(previousMatch.centerY - markerHeight / 2 + positionSearchRadius))
+        : frameHeight - markerHeight;
+      const minLeft = previousMatch
+        ? Math.max(0, Math.floor(previousMatch.centerX - markerWidth / 2 - positionSearchRadius))
+        : 0;
+      const maxLeft = previousMatch
+        ? Math.min(frameWidth - markerWidth, Math.ceil(previousMatch.centerX - markerWidth / 2 + positionSearchRadius))
+        : frameWidth - markerWidth;
+
+      for (let top = minTop; top <= maxTop; top += MARKER_SCAN_STEP) {
+        for (let left = minLeft; left <= maxLeft; left += MARKER_SCAN_STEP) {
           let sum = 0;
           let sumSquared = 0;
           let dot = 0;
@@ -223,7 +249,6 @@ export function createMarkerDetection({ markerOverlay, renderer, setWorldVisible
       return false;
     }
 
-    const previousMatch = state.pendingMatch;
     const sameMatch = previousMatch
       && Math.hypot(
         (bestMatch.left + bestMatch.width / 2) - previousMatch.centerX,
