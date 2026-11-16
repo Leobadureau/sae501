@@ -4,9 +4,11 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>SAE501 - Mountain Clearing</title>
+    <title>Aldilà — Expérience narrative</title>
 
     <link rel="stylesheet" href="./css/styles.css" />
+    <link rel="stylesheet" href="./css/experience.css" />
+    <link rel="stylesheet" href="./css/home.css" />
 
     <script type="importmap">
       {
@@ -25,31 +27,40 @@
 
       <!-- ÉCRAN DE CHOIX DU MODE -->
       <div id="mode-overlay" class="mode-overlay">
-
-        <div class="mode-content">
-
-          <h1>Les légendes corses</h1>
-
-          <p>
-            Choisissez votre mode d'expérience.
-          </p>
+        <div class="scene-backdrop" aria-hidden="true"></div>
+        <canvas id="mist-canvas" class="mist-canvas" aria-hidden="true"></canvas>
+        <main class="mode-content" aria-labelledby="brand-title">
+          <div class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 321 170" role="presentation">
+              <path d="M227 6c-6-3-10-4-16-5-11-1-31-2-40-1l-29 3c-2 0-7 3-8 5-4 12-4 24-2 36 2 11 9 20 21 21l60 8c4 1 10-1 10-5-1-6-9-10-14-10l-23 0c-7 0-17-5-15-10 1-1 4-3 5-3 21-1 55 4 69 18 8 8 11 18 13 28l5 25c0 2 3 6 5 6 3 0 7-4 7-8 0-21 0-42-14-57-9-8-19-14-30-18l-2-3c-1-1 5-4 15 1 19 10 35 21 38 42 2 14 2 27 2 42 0 3 2 6 5 6 2 0 6-2 6-5 3-22 2-45-6-67-4-9-8-16-18-22l-19-14c-3-2-6-3-11-7z" />
+              <circle cx="109" cy="24" r="15" />
+              <path d="M98 159c6 3 10 4 16 5 11 1 31 2 40 1l29-3c2 0 7-3 8-5 4-12 4-24 2-36-2-11-9-20-21-21l-60-8c-4-1-10 1-10 5 1 6 9 10 14 10l23 0c7 0 17 5 15 10-1 1-4 3-5 3-21 1-55-4-69-18-8-8-11-18-13-28l-5-25c0-2-3-6-5-6-3 0-7 4-7 8 0 21 0 42 14 57 9 8 19 14 30 18l2 3c1 1-5 4-15-1-19-10-35-21-38-42-2-14-2-27-2-42 0-3-2-6-5-6-2 0-6 2-6 5-3 22-2 45 6 67 4 9 8 16 18 22l19 14c3 2 6 3 11 7z" />
+              <circle cx="217" cy="142" r="15" />
+            </svg>
+          </div>
+          <h1 id="brand-title">ALDILÀ</h1>
+          <span class="title-rule" aria-hidden="true"></span>
+          <p class="tagline" data-copy="tagline">Entrez dans l’expérience narrative.</p>
 
           <div class="mode-buttons">
-
-            <button id="pc-mode" class="mode-button" type="button">
-              <span>Version PC</span>
-              <small>Découvrir l'expérience sur ordinateur</small>
+            <button id="pc-mode" class="mode-button" type="button" aria-label="Version ordinateur">
+              <img class="mode-icon" src="./assets/images/computer-svgrepo-com.svg" alt="" aria-hidden="true" />
+              <span>PC</span>
             </button>
-
-            <button id="ar-mode" class="mode-button" type="button">
-              <span>Version réalité augmentée</span>
-              <small>Scanner la carte avec votre caméra</small>
+            <button id="ar-mode" class="mode-button" type="button" aria-label="Version réalité virtuelle">
+              <img class="mode-icon" src="./assets/images/vr-svgrepo-com.svg" alt="" aria-hidden="true" />
+              <span>VR</span>
             </button>
-
           </div>
 
-        </div>
-
+          <section class="language-picker" aria-label="Choix de la langue">
+            <div class="language-heading"><span></span><p data-copy="language">LANGUE</p><span></span></div>
+            <div class="language-options" role="group" aria-label="Langue">
+              <button class="language-button is-active" type="button" data-language="fr" aria-pressed="true">FR</button>
+              <button class="language-button" type="button" data-language="co" aria-pressed="false">CORSE</button>
+            </div>
+          </section>
+        </main>
       </div>
 
       <div id="loading-overlay" class="loading-overlay" role="status" aria-live="polite" aria-atomic="true" hidden>
@@ -87,12 +98,13 @@
 
       <!-- MESSAGE DE DÉTECTION DU MARQUEUR -->
       <div id="marker-overlay" class="marker-overlay">
-        Scannez le marqueur <strong>SCANNE.png</strong>
+        Scannez la carte <strong>Carte_Berger.jpg</strong>
       </div>
 
     </div>
 
-    <script type="module" src="./js/main.js?v=audible-music-20261112"></script>
+    <script type="module" src="./js/main.js?v=code-structure-20261116"></script>
+    <script type="module" src="./js/home.js?v=code-structure-20261116"></script>
 
   </body>
 </html>

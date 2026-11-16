@@ -1,59 +1,39 @@
-# Scene Viewer
+# Aldilà — expérience narrative
 
-A standalone viewer for your exported Marble scene, powered by [SparkJS](https://sparkjs.dev).
+Expérience web en 3D pour ordinateur et casque compatible WebXR. La scène utilise Three.js et SparkJS, chargés depuis leurs CDN via la carte d’import HTML.
 
-## Quickstart
+## Lancer le projet
 
-To view your scene locally, you'll need to serve the files over HTTP (opening `index.html` directly won't work).
-
-### Using Python
-
-The easiest way is to use Python's built-in HTTP server:
+Le projet doit être servi en HTTP ou HTTPS. Depuis ce dossier, démarrez par exemple le serveur Python intégré :
 
 ```bash
-# Navigate to this folder in your terminal
-cd /path/to/your/exported/scene
-
-# Start the server
 python3 -m http.server 8000
 ```
 
-Then open [http://localhost:8000](http://localhost:8000) in your browser.
+Ouvrez ensuite <http://localhost:8000>. Pour accéder à la caméra ou à WebXR depuis un autre appareil, utilisez une connexion HTTPS.
 
-## Controls
+## Organisation
 
-- Allow camera access and point it at `assets/images/SCANNE.png`. The scene and the **Entrer en AR** button appear after the marker is detected.
-- In AR on Quest, point a controller at the bag and press its trigger. The shepherd appears, his voice starts, and the viewer teleports to the seated viewpoint, facing him.
-- Head tracking remains active after teleportation. The 2-meter movement perimeter follows the new viewpoint; controller sticks do not move or rotate the camera.
-- Enable hand tracking in the headset settings to display tracked hand models. Controller input remains available as well.
-- On supported devices, AR movement is limited to the visible 2-meter perimeter. WebXR support depends on the browser and device; use HTTPS for remote access.
+- `index.html` : écran d’accueil, éléments de l’interface et carte d’import.
+- `css/styles.css` : règles globales et couche de rendu.
+- `css/home.css` : écran d’accueil et choix de langue.
+- `css/experience.css` : chargement, détection du marqueur et commandes XR.
+- `js/home.js` : point d’entrée de l’accueil.
+- `js/home/fog.js` et `js/home/language.js` : brume interactive et traductions.
+- `js/main.js` : orchestration du chargement de scène, du rendu et des modes PC/AR.
+- `js/scene.js` : caméra, renderer Three.js et limites de déplacement.
+- `js/audio.js` : musique, ambiances et sons associés aux interactions.
+- `js/interactions.js` : sélection des objets, contrôleurs XR et mains.
+- `js/marker-detection.js` : caméra et détection de la carte `assets/images/Carte_Berger.jpg`.
+- `js/model-materials.js` : matériaux, textures et lueur des modèles.
+- `data/scene.json` : manifeste de scène, modèles, sons et transformations.
+- `assets/` : images, modèles, sons et scène Gaussian splat.
 
-The scene uses `Sacoche1-optimized.glb` (59,990 triangles instead of 1,499,794); the original `Sacoche1.glb` is retained. Controller picking uses the bag's bounds, and the hidden shepherd loads before the experience starts. Desktop and XR render the same original splats with LoD disabled. XR prioritizes image quality with a 1.5 framebuffer scale on each axis (2.25 times the recommended pixel count) and no compositor foveation. The module URL is versioned to refresh cached headset code when rendering settings change.
+## Modes et commandes
 
-### Using Node.js
+- **PC** : lance directement l’expérience sur ordinateur.
+- **VR** : active le mode caméra et attend la détection du marqueur avant l’entrée en AR.
+- **Casque** : pointez le contrôleur ou une main vers la sacoche et utilisez la gâchette pour déclencher la révélation du berger.
+- Le bouton de musique permet d’activer ou de couper les sons après le démarrage de l’expérience.
 
-Alternatively, if you have Node.js installed:
-
-```bash
-npx serve .
-```
-
-## Files
-
-- `index.html` – The viewer HTML file
-- `css/` – Stylesheets
-- `js/` – Viewer logic
-- `data/scene.json` – Scene manifest containing transforms and file references
-- `assets/images/` – Marker images
-- `assets/models/` – GLB objects
-- `assets/scenes/` – Compressed Gaussian splat files
-- SparkJS `2.3.1` – Loaded from the official CDN through the import map
-
-## Resources
-
-For more information on SparkJS and its capabilities, here are some places to start:
-
-- **SparkJS Documentation**: https://sparkjs.dev/docs
-- **SparkJS Examples (Demos)**: https://sparkjs.dev/examples/ 
-- **SparkJS Examples (Source Code)**: https://github.com/sparkjsdev/spark/tree/main/examples
-- **SparkJS Discord**: https://discord.gg/DxubkP8D
+Le mode PC peut aussi être ouvert directement avec `?pc`. L’accès caméra et WebXR dépend du navigateur et de l’appareil.

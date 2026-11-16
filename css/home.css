@@ -1,0 +1,262 @@
+/* Home screen */
+.mode-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  isolation: isolate;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  padding: 30px 22px;
+  background: #171817;
+  color: #eee8df;
+  font-family: Georgia, "Times New Roman", serif;
+  text-align: center;
+}
+
+.mode-overlay[hidden] {
+  display: none;
+}
+
+.scene-backdrop,
+.mist-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.scene-backdrop {
+  z-index: -3;
+  background-image:
+    linear-gradient(90deg, rgba(8, 9, 9, .43), rgba(20, 20, 19, .36) 48%, rgba(8, 9, 9, .48)),
+    linear-gradient(0deg, rgba(8, 9, 9, .25), rgba(20, 20, 19, .03) 44%, rgba(8, 9, 9, .2)),
+    url("../assets/images/Fond.png");
+  background-position: center;
+  background-size: cover;
+  transform: scale(1.025);
+  animation: forest-drift 28s ease-in-out infinite alternate;
+}
+
+.mist-canvas {
+  z-index: -2;
+  opacity: .7;
+  mix-blend-mode: screen;
+}
+
+.mode-content {
+  position: relative;
+  z-index: 1;
+  width: min(100%, 720px);
+  max-width: 720px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transform: translateY(5px);
+  text-align: center;
+  animation: arrive .9s both;
+}
+
+.brand-mark {
+  width: clamp(104px, 13vw, 168px);
+  height: clamp(76px, 9vw, 112px);
+  margin-bottom: 8px;
+  filter: drop-shadow(0 0 16px rgba(255, 242, 223, .15));
+}
+
+.brand-mark svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  fill: #eee7dd;
+}
+
+.mode-content h1 {
+  margin: 0;
+  color: #eee7dd;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(52px, 6vw, 88px);
+  font-weight: 400;
+  letter-spacing: .26em;
+  line-height: 1.12;
+  text-indent: .26em;
+  text-shadow: 0 2px 20px rgba(0, 0, 0, .35);
+}
+
+.title-rule {
+  width: 54px;
+  height: 1px;
+  margin-top: clamp(22px, 3.2vh, 34px);
+  background: rgba(238, 231, 221, .82);
+}
+
+.mode-content .tagline {
+  margin: clamp(22px, 3.3vh, 32px) 0 0;
+  color: #eee7dd;
+  font-size: clamp(18px, 2vw, 29px);
+  font-style: italic;
+  letter-spacing: .065em;
+  line-height: 1.3;
+  text-shadow: 0 2px 12px #191817;
+}
+
+.mode-buttons {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  justify-content: center;
+  gap: clamp(18px, 2.2vw, 36px);
+  width: 100%;
+  margin-top: clamp(48px, 7.2vh, 70px);
+}
+
+.mode-button {
+  display: flex;
+  pointer-events: auto;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  gap: 23px;
+  width: min(42vw, 324px);
+  min-height: 91px;
+  padding: 17px 24px;
+  border: 1px solid rgba(226, 218, 206, .62);
+  border-radius: 11px;
+  background: rgba(31, 30, 29, .27);
+  color: #eee7dd;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 29px;
+  letter-spacing: .16em;
+  text-align: center;
+  box-shadow: inset 0 0 22px rgba(245, 235, 218, .025), 0 4px 22px rgba(0, 0, 0, .1);
+  backdrop-filter: blur(2px);
+  transition: background .25s ease, border-color .25s ease, transform .25s ease, box-shadow .25s ease;
+}
+
+.mode-button:hover,
+.mode-button:focus-visible {
+  transform: translateY(-3px);
+  border-color: rgba(250, 244, 233, .95);
+  background: rgba(226, 218, 206, .14);
+  box-shadow: inset 0 0 24px rgba(245, 235, 218, .06), 0 8px 30px rgba(0, 0, 0, .25);
+  outline: none;
+}
+
+.mode-button .mode-icon {
+  display: block;
+  width: 43px;
+  height: 38px;
+  flex: 0 0 auto;
+  object-fit: contain;
+  filter: brightness(0) invert(.92);
+}
+
+.language-picker {
+  margin-top: clamp(56px, 7.2vh, 70px);
+}
+
+.language-heading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 26px;
+  margin-bottom: 23px;
+}
+
+.language-heading span {
+  width: 120px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(233, 225, 213, .48));
+}
+
+.language-heading span:last-child {
+  transform: rotate(180deg);
+}
+
+.language-heading p {
+  margin: 0;
+  color: #eee7dd;
+  font-size: 15px;
+  letter-spacing: .35em;
+  text-indent: .35em;
+}
+
+.language-options {
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+}
+
+.language-button {
+  min-width: 97px;
+  height: 40px;
+  padding: 0 24px;
+  border: 1px solid rgba(228, 221, 211, .52);
+  border-radius: 99px;
+  background: rgba(15, 15, 15, .12);
+  color: #eee7dd;
+  font: 14px Georgia, "Times New Roman", serif;
+  letter-spacing: .18em;
+  cursor: pointer;
+  transition: color .2s, background .2s, border-color .2s;
+  pointer-events: auto;
+}
+
+.language-button:hover,
+.language-button:focus-visible {
+  border-color: #f0e9df;
+  outline: none;
+}
+
+.language-button.is-active {
+  border-color: #eee7dd;
+  background: #eee7dd;
+  color: #242322;
+}
+
+@keyframes forest-drift {
+  from { transform: scale(1.025) translate3d(-.35%, .2%, 0); }
+  to { transform: scale(1.06) translate3d(.35%, -.2%, 0); }
+}
+
+@keyframes arrive {
+  from { opacity: 0; transform: translateY(13px); }
+  to { opacity: 1; transform: translateY(5px); }
+}
+
+@media (max-height: 760px) {
+  .mode-content { transform: scale(.84); }
+  .mode-buttons { margin-top: 34px; }
+  .language-picker { margin-top: 34px; }
+  .brand-mark { height: 72px; margin-bottom: 4px; }
+  .title-rule { margin-top: 17px; }
+  .mode-content .tagline { margin-top: 15px; }
+  .mode-button { min-height: 76px; }
+}
+
+@media (max-width: 600px) {
+  .mode-overlay { padding: 20px 18px; }
+  .mode-content { transform: none; }
+  .brand-mark { width: 104px; height: 75px; }
+  .mode-content h1 { font-size: clamp(44px, 12vw, 62px); }
+  .mode-content .tagline { max-width: 330px; font-size: 19px; }
+  .mode-buttons { gap: 12px; margin-top: 46px; }
+  .mode-button { width: 46%; min-height: 74px; gap: 11px; padding: 12px 9px; font-size: 23px; }
+  .mode-button .mode-icon { width: 34px; height: 32px; }
+  .language-picker { margin-top: 50px; }
+  .language-heading span { width: 55px; }
+  .language-options { gap: 9px; }
+  .language-button { min-width: 73px; height: 37px; padding: 0 13px; font-size: 12px; }
+}
+
+@media (max-width: 600px) and (max-height: 720px) {
+  .mode-content { transform: scale(.82); }
+  .mode-buttons { margin-top: 30px; }
+  .language-picker { margin-top: 30px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scene-backdrop, .mode-content { animation: none; }
+}
