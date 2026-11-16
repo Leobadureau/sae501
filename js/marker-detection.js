@@ -36,7 +36,7 @@ export function createMarkerDetection({ markerOverlay, renderer, setWorldVisible
     markerTemplate: null,
     markerAspectRatio: null,
     pendingMatch: null,
-    threshold: 0.76,
+    threshold: 0.62,
   };
 
   function updateOverlay(visible) {
@@ -190,10 +190,10 @@ export function createMarkerDetection({ markerOverlay, renderer, setWorldVisible
       && Math.hypot(
         (bestMatch.left + bestMatch.width / 2) - previousMatch.centerX,
         (bestMatch.top + bestMatch.height / 2) - previousMatch.centerY
-      ) <= Math.max(6, bestMatch.height * 0.14)
+      ) <= Math.max(8, bestMatch.height * 0.22)
       && Math.abs(bestMatch.height - previousMatch.height) <= Math.max(
         MARKER_SCALE_STEP * 1.5,
-        previousMatch.height * 0.2
+        previousMatch.height * 0.25
       );
 
     state.pendingMatch = {
