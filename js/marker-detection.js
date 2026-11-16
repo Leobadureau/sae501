@@ -18,8 +18,8 @@ function createMarkerTemplate(imageData) {
   return { values, normSquared };
 }
 
-const MARKER_TEMPLATE_WIDTH = 24;
-const MIN_MARKER_HEIGHT = 32;
+const MARKER_TEMPLATE_WIDTH = 36;
+const MIN_MARKER_HEIGHT = 40;
 const MARKER_SCAN_STEP = 4;
 const MARKER_SCALE_STEP = 6;
 const REQUIRED_MARKER_CONFIRMATIONS = 4;
@@ -36,7 +36,7 @@ export function createMarkerDetection({ markerOverlay, renderer, setWorldVisible
     markerTemplate: null,
     markerAspectRatio: null,
     pendingMatch: null,
-    threshold: 0.62,
+    threshold: 0.74,
   };
 
   function updateOverlay(visible) {
@@ -80,15 +80,23 @@ export function createMarkerDetection({ markerOverlay, renderer, setWorldVisible
 
       const markerCanvas = document.createElement("canvas");
       markerCanvas.width = MARKER_TEMPLATE_WIDTH;
-      markerCanvas.height = Math.round(
-        MARKER_TEMPLATE_WIDTH * markerImage.naturalHeight / markerImage.naturalWidth
-      );
+      const crop = {
+        x: markerImage.naturalWidth * 0.105,
+        y: markerImage.naturalHeight * 0.082,
+        width: markerImage.naturalWidth * 0.79,
+        height: markerImage.naturalHeight * 0.735,
+      };
+      state.markerAspectRatio = crop.width / crop.height;
+      markerCanvas.height = Math.round(MARKER_TEMPLATE_WIDTH / state.markerAspectRatio);
       const markerContext = markerCanvas.getContext("2d", { willReadFrequently: true });
-      markerContext.drawImage(markerImage, 0, 0, markerCanvas.width, markerCanvas.height);
+      markerContext.drawImage(
+        markerImage,
+        crop.x, crop.y, crop.width, crop.height,
+        0, 0, markerCanvas.width, markerCanvas.height
+      );
       state.markerTemplate = createMarkerTemplate(
         markerContext.getImageData(0, 0, markerCanvas.width, markerCanvas.height)
       );
-      state.markerAspectRatio = markerImage.naturalWidth / markerImage.naturalHeight;
 
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
