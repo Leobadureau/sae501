@@ -99,16 +99,22 @@ export function createMarkerDetection({ markerOverlay, renderer, setWorldVisible
       );
 
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: { ideal: "environment" },
-          width: { ideal: 1920 },
-          height: { ideal: 1080 },
-        },
+        video: { facingMode: { ideal: "environment" } },
         audio: false,
       });
       if (state.pcMode || state.locked) {
         stream.getTracks().forEach((track) => track.stop());
         return;
+      }
+
+      const videoTrack = stream.getVideoTracks()[0];
+      const zoomRange = videoTrack.getCapabilities?.().zoom;
+      if (zoomRange && Number.isFinite(zoomRange.min)) {
+        try {
+          await videoTrack.applyConstraints({ advanced: [{ zoom: zoomRange.min }] });
+        } catch (error) {
+          console.info("Camera zoom could not be adjusted by the browser.", error);
+        }
       }
 
       const video = document.createElement("video");
