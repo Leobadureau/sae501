@@ -20,11 +20,27 @@ function createMarkerTemplate(imageData) {
 
 const MARKER_TEMPLATE_WIDTH = 24;
 const SMALL_MARKER_TEMPLATE_WIDTH = 16;
+const TINY_MARKER_TEMPLATE_WIDTH = 12;
 const SMALL_MARKER_MAX_HEIGHT = 30;
-const MIN_MARKER_HEIGHT = 12;
+const TINY_MARKER_MAX_HEIGHT = 18;
+const MIN_MARKER_HEIGHT = 10;
 const MARKER_SCAN_STEP = 6;
-const MARKER_SCALE_STEP = 8;
+const MARKER_SCALE_RATIO = 1.12;
 const REQUIRED_MARKER_CONFIRMATIONS = 4;
+
+function getMarkerHeights(maxHeight, minHeight) {
+  const heights = [];
+  let height = maxHeight;
+
+  while (height >= minHeight) {
+    heights.push(Math.round(height));
+    const nextHeight = Math.floor(height / MARKER_SCALE_RATIO);
+    if (nextHeight >= height) break;
+    height = nextHeight;
+  }
+
+  return heights;
+}
 
 export function createMarkerDetection({ markerOverlay, renderer, setWorldVisible, enterPcMode }) {
   const state = {
@@ -99,7 +115,11 @@ export function createMarkerDetection({ markerOverlay, renderer, setWorldVisible
         height: markerImage.naturalHeight * 0.735,
       };
       state.markerAspectRatio = crop.width / crop.height;
-      state.markerTemplates = [SMALL_MARKER_TEMPLATE_WIDTH, MARKER_TEMPLATE_WIDTH].map((width) => {
+      state.markerTemplates = [
+        TINY_MARKER_TEMPLATE_WIDTH,
+        SMALL_MARKER_TEMPLATE_WIDTH,
+        MARKER_TEMPLATE_WIDTH,
+      ].map((width) => {
         const markerCanvas = document.createElement("canvas");
         markerCanvas.width = width;
         markerCanvas.height = Math.round(width / state.markerAspectRatio);
@@ -188,32 +208,33 @@ export function createMarkerDetection({ markerOverlay, renderer, setWorldVisible
       frameHeight,
       Math.floor(frameWidth / state.markerAspectRatio)
     );
-    const heightSearchRadius = previousMatch
-      ? Math.max(MARKER_SCALE_STEP * 2, previousMatch.height * 0.2)
-      : 0;
+    const heightSearchRadius = previousMatch ? previousMatch.height * 0.25 : 0;
     const minMarkerHeight = previousMatch
       ? Math.max(MIN_MARKER_HEIGHT, Math.floor(previousMatch.height - heightSearchRadius))
       : MIN_MARKER_HEIGHT;
     const maxSearchMarkerHeight = previousMatch
       ? Math.min(maxMarkerHeight, Math.ceil(previousMatch.height + heightSearchRadius))
       : maxMarkerHeight;
+    const markerHeights = getMarkerHeights(maxSearchMarkerHeight, minMarkerHeight);
 
     scanCandidates:
-    for (let markerHeight = maxSearchMarkerHeight;
-      markerHeight >= minMarkerHeight;
-      markerHeight -= MARKER_SCALE_STEP) {
+    for (const markerHeight of markerHeights) {
       const markerWidth = Math.round(markerHeight * state.markerAspectRatio);
       if (markerWidth < 1 || markerWidth > frameWidth) continue;
-      const markerTemplate = markerHeight <= SMALL_MARKER_MAX_HEIGHT
-        ? markerTemplates[0]
-        : markerTemplates[1];
+      const templateIndex = markerHeight <= TINY_MARKER_MAX_HEIGHT
+        ? 0
+        : markerHeight <= SMALL_MARKER_MAX_HEIGHT ? 1 : 2;
+      const markerTemplate = markerTemplates[templateIndex];
       const { width: templateWidth, height: templateHeight, values, normSquared } = markerTemplate;
       const sampleCount = values.length;
       const minimumTextureVariance = sampleCount * 64;
-      const markerScanStep = markerHeight <= SMALL_MARKER_MAX_HEIGHT ? 3 : MARKER_SCAN_STEP;
+      const markerScanStep = Math.min(
+        MARKER_SCAN_STEP,
+        Math.max(2, Math.round(markerHeight * 0.12))
+      );
 
       const positionSearchRadius = previousMatch
-        ? Math.max(12, markerHeight * 0.28)
+        ? Math.max(4, markerHeight * 0.28)
         : 0;
       const minTop = previousMatch
         ? Math.max(0, Math.floor(previousMatch.centerY - markerHeight / 2 - positionSearchRadius))
@@ -270,7 +291,7 @@ export function createMarkerDetection({ markerOverlay, renderer, setWorldVisible
         (bestMatch.top + bestMatch.height / 2) - previousMatch.centerY
       ) <= Math.max(4, bestMatch.height * 0.25)
       && Math.abs(bestMatch.height - previousMatch.height) <= Math.max(
-        MARKER_SCALE_STEP * 0.75,
+        2,
         previousMatch.height * 0.2
       );
 
