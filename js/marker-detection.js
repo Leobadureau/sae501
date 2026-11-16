@@ -18,10 +18,10 @@ function createMarkerTemplate(imageData) {
   return { values, normSquared };
 }
 
-const MARKER_TEMPLATE_WIDTH = 36;
-const MIN_MARKER_HEIGHT = 28;
-const MARKER_SCAN_STEP = 4;
-const MARKER_SCALE_STEP = 6;
+const MARKER_TEMPLATE_WIDTH = 24;
+const MIN_MARKER_HEIGHT = 22;
+const MARKER_SCAN_STEP = 6;
+const MARKER_SCALE_STEP = 8;
 const REQUIRED_MARKER_CONFIRMATIONS = 4;
 
 export function createMarkerDetection({ markerOverlay, renderer, setWorldVisible, enterPcMode }) {
@@ -101,8 +101,9 @@ export function createMarkerDetection({ markerOverlay, renderer, setWorldVisible
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: { ideal: "environment" },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
           aspectRatio: { ideal: 16 / 9 },
-          resizeMode: { ideal: "none" },
         },
         audio: false,
       });
@@ -113,12 +114,14 @@ export function createMarkerDetection({ markerOverlay, renderer, setWorldVisible
 
       const videoTrack = stream.getVideoTracks()[0];
       const zoomRange = videoTrack.getCapabilities?.().zoom;
+      console.info("Camera stream settings:", videoTrack.getSettings());
       if (zoomRange && Number.isFinite(zoomRange.min)) {
         try {
           await videoTrack.applyConstraints({
             facingMode: { ideal: "environment" },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
             aspectRatio: { ideal: 16 / 9 },
-            resizeMode: { ideal: "none" },
             advanced: [{ zoom: zoomRange.min }],
           });
         } catch (error) {
@@ -137,7 +140,7 @@ export function createMarkerDetection({ markerOverlay, renderer, setWorldVisible
       document.body.appendChild(video);
       await video.play();
 
-      const frameScale = 200 / Math.max(video.videoWidth || 160, video.videoHeight || 120);
+      const frameScale = 120 / Math.max(video.videoWidth || 160, video.videoHeight || 120);
       state.canvas.width = Math.round((video.videoWidth || 160) * frameScale);
       state.canvas.height = Math.round((video.videoHeight || 120) * frameScale);
       state.context = state.canvas.getContext("2d", { willReadFrequently: true });
