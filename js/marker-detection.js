@@ -26,7 +26,7 @@ const TINY_MARKER_MAX_HEIGHT = 18;
 const MIN_MARKER_HEIGHT = 10;
 const MARKER_SCAN_STEP = 6;
 const MARKER_SCALE_RATIO = 1.12;
-const REQUIRED_MARKER_CONFIRMATIONS = 4;
+const REQUIRED_MARKER_CONFIRMATIONS = 3;
 
 function getMarkerHeights(maxHeight, minHeight) {
   const heights = [];
