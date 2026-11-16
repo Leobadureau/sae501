@@ -19,7 +19,9 @@ function createMarkerTemplate(imageData) {
 }
 
 const MARKER_TEMPLATE_WIDTH = 24;
-const MIN_MARKER_HEIGHT = 22;
+const SMALL_MARKER_TEMPLATE_WIDTH = 16;
+const SMALL_MARKER_MAX_HEIGHT = 30;
+const MIN_MARKER_HEIGHT = 12;
 const MARKER_SCAN_STEP = 6;
 const MARKER_SCALE_STEP = 8;
 const REQUIRED_MARKER_CONFIRMATIONS = 4;
@@ -33,10 +35,10 @@ export function createMarkerDetection({ markerOverlay, renderer, setWorldVisible
     stream: null,
     canvas: document.createElement("canvas"),
     context: null,
-    markerTemplate: null,
+    markerTemplates: null,
     markerAspectRatio: null,
     pendingMatch: null,
-    threshold: 0.6,
+    threshold: 0.58,
   };
 
   function updateOverlay(visible) {
@@ -90,8 +92,6 @@ export function createMarkerDetection({ markerOverlay, renderer, setWorldVisible
 
       if (state.pcMode || state.locked) return;
 
-      const markerCanvas = document.createElement("canvas");
-      markerCanvas.width = MARKER_TEMPLATE_WIDTH;
       const crop = {
         x: markerImage.naturalWidth * 0.105,
         y: markerImage.naturalHeight * 0.082,
@@ -99,16 +99,24 @@ export function createMarkerDetection({ markerOverlay, renderer, setWorldVisible
         height: markerImage.naturalHeight * 0.735,
       };
       state.markerAspectRatio = crop.width / crop.height;
-      markerCanvas.height = Math.round(MARKER_TEMPLATE_WIDTH / state.markerAspectRatio);
-      const markerContext = markerCanvas.getContext("2d", { willReadFrequently: true });
-      markerContext.drawImage(
-        markerImage,
-        crop.x, crop.y, crop.width, crop.height,
-        0, 0, markerCanvas.width, markerCanvas.height
-      );
-      state.markerTemplate = createMarkerTemplate(
-        markerContext.getImageData(0, 0, markerCanvas.width, markerCanvas.height)
-      );
+      state.markerTemplates = [SMALL_MARKER_TEMPLATE_WIDTH, MARKER_TEMPLATE_WIDTH].map((width) => {
+        const markerCanvas = document.createElement("canvas");
+        markerCanvas.width = width;
+        markerCanvas.height = Math.round(width / state.markerAspectRatio);
+        const markerContext = markerCanvas.getContext("2d", { willReadFrequently: true });
+        markerContext.drawImage(
+          markerImage,
+          crop.x, crop.y, crop.width, crop.height,
+          0, 0, markerCanvas.width, markerCanvas.height
+        );
+        return {
+          width,
+          height: markerCanvas.height,
+          ...createMarkerTemplate(
+            markerContext.getImageData(0, 0, markerCanvas.width, markerCanvas.height)
+          ),
+        };
+      });
 
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
@@ -167,18 +175,13 @@ export function createMarkerDetection({ markerOverlay, renderer, setWorldVisible
   }
 
   function detectFrame() {
-    if (!state.enabled || !state.video || !state.markerTemplate || !state.context) return false;
+    if (!state.enabled || !state.video || !state.markerTemplates || !state.context) return false;
 
-    const { canvas, context, video, markerTemplate, threshold } = state;
+    const { canvas, context, video, markerTemplates, threshold } = state;
     const frameWidth = canvas.width;
     const frameHeight = canvas.height;
     context.drawImage(video, 0, 0, frameWidth, frameHeight);
     const frame = toGrayPixels(context.getImageData(0, 0, frameWidth, frameHeight));
-    const { values, normSquared } = markerTemplate;
-    const templateWidth = MARKER_TEMPLATE_WIDTH;
-    const templateHeight = values.length / templateWidth;
-    const sampleCount = values.length;
-    const minimumTextureVariance = sampleCount * 64;
     let bestMatch = null;
     const previousMatch = state.pendingMatch;
     const maxMarkerHeight = Math.min(
@@ -195,11 +198,19 @@ export function createMarkerDetection({ markerOverlay, renderer, setWorldVisible
       ? Math.min(maxMarkerHeight, Math.ceil(previousMatch.height + heightSearchRadius))
       : maxMarkerHeight;
 
-    for (let markerHeight = minMarkerHeight;
-      markerHeight <= maxSearchMarkerHeight;
-      markerHeight += MARKER_SCALE_STEP) {
+    scanCandidates:
+    for (let markerHeight = maxSearchMarkerHeight;
+      markerHeight >= minMarkerHeight;
+      markerHeight -= MARKER_SCALE_STEP) {
       const markerWidth = Math.round(markerHeight * state.markerAspectRatio);
       if (markerWidth < 1 || markerWidth > frameWidth) continue;
+      const markerTemplate = markerHeight <= SMALL_MARKER_MAX_HEIGHT
+        ? markerTemplates[0]
+        : markerTemplates[1];
+      const { width: templateWidth, height: templateHeight, values, normSquared } = markerTemplate;
+      const sampleCount = values.length;
+      const minimumTextureVariance = sampleCount * 64;
+      const markerScanStep = markerHeight <= SMALL_MARKER_MAX_HEIGHT ? 3 : MARKER_SCAN_STEP;
 
       const positionSearchRadius = previousMatch
         ? Math.max(12, markerHeight * 0.28)
@@ -217,8 +228,8 @@ export function createMarkerDetection({ markerOverlay, renderer, setWorldVisible
         ? Math.min(frameWidth - markerWidth, Math.ceil(previousMatch.centerX - markerWidth / 2 + positionSearchRadius))
         : frameWidth - markerWidth;
 
-      for (let top = minTop; top <= maxTop; top += MARKER_SCAN_STEP) {
-        for (let left = minLeft; left <= maxLeft; left += MARKER_SCAN_STEP) {
+      for (let top = minTop; top <= maxTop; top += markerScanStep) {
+        for (let left = minLeft; left <= maxLeft; left += markerScanStep) {
           let sum = 0;
           let sumSquared = 0;
           let dot = 0;
@@ -240,6 +251,10 @@ export function createMarkerDetection({ markerOverlay, renderer, setWorldVisible
           if (!bestMatch || similarity > bestMatch.similarity) {
             bestMatch = { left, top, width: markerWidth, height: markerHeight, similarity };
           }
+          if (similarity >= 0.82) {
+            bestMatch = { left, top, width: markerWidth, height: markerHeight, similarity };
+            break scanCandidates;
+          }
         }
       }
     }
@@ -253,10 +268,10 @@ export function createMarkerDetection({ markerOverlay, renderer, setWorldVisible
       && Math.hypot(
         (bestMatch.left + bestMatch.width / 2) - previousMatch.centerX,
         (bestMatch.top + bestMatch.height / 2) - previousMatch.centerY
-      ) <= Math.max(8, bestMatch.height * 0.22)
+      ) <= Math.max(4, bestMatch.height * 0.25)
       && Math.abs(bestMatch.height - previousMatch.height) <= Math.max(
-        MARKER_SCALE_STEP * 1.5,
-        previousMatch.height * 0.25
+        MARKER_SCALE_STEP * 0.75,
+        previousMatch.height * 0.2
       );
 
     state.pendingMatch = {
