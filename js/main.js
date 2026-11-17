@@ -37,8 +37,6 @@ const pcModeButton = document.getElementById("pc-mode");
 const arModeButton = document.getElementById("ar-mode");
 const musicToggle = document.getElementById("music-toggle");
 const audio = createAudioSystem({ THREE, audioListener, scene, renderer, musicToggle });
-let narrative = null;
-let autoStartNarrative = false;
 const markerTracker = createMarkerDetection({
   markerOverlay,
   renderer,
@@ -81,17 +79,7 @@ function enterPcMode(event) {
   renderer.setClearAlpha(1);
   if (loadingOverlay) loadingOverlay.hidden = false;
   setWorldVisible(true);
-  startNarrativeAtCamp();
   if (modeOverlay) modeOverlay.hidden = true;
-}
-
-function startNarrativeAtCamp() {
-  if (!narrative) {
-    autoStartNarrative = true;
-    return;
-  }
-  autoStartNarrative = false;
-  void narrative.startAtCamp();
 }
 
 pcModeButton?.addEventListener("click", enterPcMode);
@@ -1060,7 +1048,7 @@ const narrativePrompt = document.getElementById("narrative-prompt");
 const narrativeText = document.getElementById("narrative-text");
 const narrativeAction = document.getElementById("narrative-action");
 const collectibleCard = document.getElementById("collectible-card");
-narrative = createNarrativeController({
+const narrative = createNarrativeController({
   audio,
   getShepherd: () => loadedModels.get("assets/models/old man 3d model/tripo_convert_ad709b62-a73c-451d-b686-15168f7a6180.fbx"),
   getBag: () => loadedModels.get("assets/models/Sacoche1-optimized.glb"),
@@ -1087,8 +1075,8 @@ narrative = createNarrativeController({
     renderEnabled = true;
     lastMoved = performance.now();
   },
-  animateArrival: (model, { movePlayer = true } = {}) => {
-    if (model && movePlayer) {
+  animateArrival: (model) => {
+    if (model) {
       enterSeatedView();
     }
     if (model) return playShepherdAnimation(model);
@@ -1109,9 +1097,6 @@ narrative.load().catch((error) => {
     narrativeText.textContent = "Les dialogues du berger n’ont pas pu être chargés.";
   }
 });
-if (autoStartNarrative || markerDetection.pcMode || markerDetection.locked) {
-  startNarrativeAtCamp();
-}
 narrativeAction?.addEventListener("click", () => {
   audio.unlockSpatialAudio();
   void narrative.activatePrompt();
@@ -1374,7 +1359,6 @@ renderer.setAnimationLoop(function animate(time, xrFrame) {
       markerDetection.enabled = false;
       renderer.setClearAlpha(0);
       setWorldVisible(true);
-      startNarrativeAtCamp();
       if (xrReady && xrSupported) {
         xrButton.textContent = "Entrer en AR";
         xrButton.hidden = false;
@@ -1396,7 +1380,6 @@ renderer.setAnimationLoop(function animate(time, xrFrame) {
   clampSeatedViewPitch();
   updateMovement(xrFrame);
   updateSeatedCameraTransition(animationDelta);
-  narrative.update(camera.getWorldPosition(new THREE.Vector3()));
   updateXrInteraction(time);
   updateCameraFacingFires(camera);
 

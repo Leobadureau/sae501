@@ -62,7 +62,7 @@ export function createNarrativeController({
     revealShepherd(shepherd);
 
     try {
-      const arrival = animateArrival(shepherd, { movePlayer: false });
+      const arrival = animateArrival(shepherd);
       await Promise.all([arrival, play(0)]);
       arrivalComplete = true;
       stage = "approach";
@@ -73,18 +73,10 @@ export function createNarrativeController({
     }
   }
 
-  function update(playerPosition) {
-    if (started || stage !== "waiting-near-bag") return;
-    const bag = getBag();
-    if (!bag) return;
-    const distance = Math.hypot(playerPosition.x - bag.position.x, playerPosition.z - bag.position.z);
-    if (distance <= 1.8) startFirstLine();
-  }
-
   async function activateBag(controller = null) {
     if (busy) return;
     if (stage === "waiting-near-bag") {
-      startFirstLine();
+      void startAtCamp();
       return;
     }
 
@@ -187,6 +179,5 @@ export function createNarrativeController({
     activateCollectible,
     activatePrompt,
     activateShepherd,
-    update,
   };
 }
