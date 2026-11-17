@@ -6,9 +6,9 @@ import { SplatMesh, SparkControls, SparkXr, utils } from "@sparkjsdev/spark";
 import { addModelGlow, convertToBasicMaterials, waitForModelTextures } from "./model-materials.js";
 import { createMarkerDetection } from "./marker-detection.js?v=lower-scan-latency-20261116";
 import { createAudioSystem } from "./audio.js";
-import { createInteractionSystem } from "./interactions.js?v=vr-freeze-fix-20261117";
+import { createInteractionSystem } from "./interactions.js?v=palm-inventory-toggle-20261117";
 import { createNarrativeController } from "./narrative.js?v=wrong-choice-audio-20261117";
-import { createInventorySystem } from "./inventory.js?v=vr-ui-textures-20261117";
+import { createInventorySystem } from "./inventory.js?v=palm-inventory-toggle-20261117";
 import {
   SPAWN_POSITION,
   PC_CAMERA_HEIGHT_OFFSET,
@@ -1131,7 +1131,7 @@ document.getElementById("collectible-close")?.addEventListener("click", () => {
   if (collectibleCard) collectibleCard.hidden = true;
 });
 const xrInteractionControllers = interactionSystem.controllers;
-const updateXrInteraction = (time) => interactionSystem.updateXrInteraction(time);
+const updateXrInteraction = (time, xrFrame) => interactionSystem.updateXrInteraction(time, xrFrame);
 
 function onWindowResize() {
   camera.aspect = window.innerWidth / window.innerHeight;
@@ -1404,7 +1404,7 @@ renderer.setAnimationLoop(function animate(time, xrFrame) {
   clampSeatedViewPitch();
   updateMovement(xrFrame);
   updateSeatedCameraTransition(animationDelta);
-  updateXrInteraction(time);
+  updateXrInteraction(time, xrFrame);
   updateCameraFacingFires(camera);
 
   const now = performance.now();

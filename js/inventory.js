@@ -59,7 +59,7 @@ export function createInventorySystem({
 
   const vrToggle = new THREE.Group();
   vrToggle.name = "aldila-vr-inventory-toggle";
-  vrToggle.position.set(0.45, -0.45, -0.82);
+  vrToggle.position.set(0.34, -0.36, -0.82);
   camera.add(vrToggle);
   const iconCanvas = document.createElement("canvas");
   iconCanvas.width = 128;
@@ -76,7 +76,7 @@ export function createInventorySystem({
     loadedTexture.dispose();
   });
   const vrToggleButton = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.14, 0.14),
+    new THREE.PlaneGeometry(0.4, 0.4),
     new THREE.MeshBasicMaterial({
       color: 0xffffff,
       transparent: true,
@@ -121,8 +121,8 @@ export function createInventorySystem({
     model: vrToggleButton,
     highlight: new THREE.Object3D(),
     bounds: new THREE.Box3(
-      new THREE.Vector3(-0.07, -0.07, -0.01),
-      new THREE.Vector3(0.07, 0.07, 0.01)
+      new THREE.Vector3(-0.2, -0.2, -0.01),
+      new THREE.Vector3(0.2, 0.2, 0.01)
     ),
   });
 

@@ -26,12 +26,15 @@ export function createInteractionSystem({
   const grabPlane = new THREE.Plane();
   const grabPlaneHit = new THREE.Vector3();
   const controllers = [];
+  const palmGestureStates = Array.from({ length: 2 }, () => ({ openSince: null, latched: false }));
   let pointerStart = null;
   let pointerGrab = null;
   let hoveredModel = null;
   let selectedModel = null;
   let defaultRotateSpeed = null;
   let lastHoverUpdate = -Infinity;
+  let lastPalmGestureCheck = -Infinity;
+  let lastPalmToggle = -Infinity;
 
   function findInteractiveHitAtRay() {
     let closestMeshHit = null;
@@ -82,17 +85,6 @@ export function createInteractionSystem({
     controller.updateWorldMatrix(true, false);
     const origin = new THREE.Vector3().setFromMatrixPosition(controller.matrixWorld);
     const direction = new THREE.Vector3(0, 0, -1).transformDirection(controller.matrixWorld);
-    raycaster.set(origin, direction);
-    return findInteractiveHitAtRay();
-  }
-
-  function findHandHit(hand) {
-    hand.updateWorldMatrix(true, true);
-    const tip = hand.joints?.["index-finger-tip"];
-    if (!tip?.visible) return null;
-    tip.updateWorldMatrix(true, false);
-    const origin = tip.getWorldPosition(new THREE.Vector3());
-    const direction = new THREE.Vector3(0, 0, -1).transformDirection(tip.matrixWorld);
     raycaster.set(origin, direction);
     return findInteractiveHitAtRay();
   }
@@ -245,35 +237,18 @@ export function createInteractionSystem({
     const hand = renderer.xr.getHand(index);
     hand.add(handModelFactory.createHandModel(hand, "mesh"));
     localFrame.add(hand);
-    const pointerRay = new THREE.Line(
-      new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(0, 0, -1)]),
-      new THREE.LineBasicMaterial({ color: 0x65e6c5, transparent: true, opacity: 0.85 })
-    );
-    pointerRay.scale.z = 10;
-    pointerRay.visible = false;
-    let indexTip = null;
-    hand.addEventListener("connected", () => {
-      indexTip = hand.joints?.["index-finger-tip"] ?? null;
-      indexTip?.add(pointerRay);
-    });
-    hand.addEventListener("disconnected", () => {
-      pointerRay.visible = false;
-      pointerRay.removeFromParent();
-      indexTip = null;
-    });
     const interactionController = controllers[index];
     hand.addEventListener("pinchend", () => {
       interactionController.grabbed = null;
     });
     hand.addEventListener("pinchstart", () => {
       if (!renderer.xr.isPresenting) return;
-      const hit = findHandHit(hand);
+      const hit = findControllerHit(interactionController.controller);
       if (!hit) return;
       unlockAudio();
-      if (isModelAction(hit.model)) onModelActivate(hit.model, hand);
+      if (isModelAction(hit.model)) onModelActivate(hit.model, interactionController.controller);
       else beginControllerGrab(interactionController, hit);
     });
-    interactionController.handPointer = { hand, pointerRay, get indexTip() { return indexTip; } };
   }
 
   renderer.domElement.addEventListener("pointerdown", (event) => {
@@ -337,24 +312,109 @@ export function createInteractionSystem({
     endPointerGrab();
   });
 
-  function updateXrInteraction(time) {
+  function isOpenPalmFacingViewer(hand, viewerPosition) {
+    const joints = hand.joints;
+    const wrist = joints?.wrist;
+    const thumbTip = joints?.["thumb-tip"];
+    const indexMetacarpal = joints?.["index-finger-metacarpal"];
+    if (!wrist?.visible || !thumbTip?.visible || !indexMetacarpal?.visible) return false;
+
+    hand.updateWorldMatrix(true, true);
+    const wristPosition = wrist.getWorldPosition(new THREE.Vector3());
+    const wristQuaternion = wrist.getWorldQuaternion(new THREE.Quaternion());
+    const palmNormal = new THREE.Vector3(0, -1, 0).applyQuaternion(wristQuaternion).normalize();
+    const towardViewer = viewerPosition.clone().sub(wristPosition).normalize();
+    if (palmNormal.dot(towardViewer) < 0.65) return false;
+
+    const extensionThresholds = [
+      ["index-finger-tip", 0.15],
+      ["middle-finger-tip", 0.16],
+      ["ring-finger-tip", 0.15],
+      ["pinky-finger-tip", 0.13],
+    ];
+    for (const [jointName, minimumDistance] of extensionThresholds) {
+      const tip = joints[jointName];
+      if (!tip?.visible || tip.getWorldPosition(new THREE.Vector3()).distanceTo(wristPosition) < minimumDistance) {
+        return false;
+      }
+    }
+
+    const thumbPosition = thumbTip.getWorldPosition(new THREE.Vector3());
+    const indexBasePosition = indexMetacarpal.getWorldPosition(new THREE.Vector3());
+    return thumbPosition.distanceTo(indexBasePosition) > 0.065;
+  }
+
+  function updatePalmGesture(time, xrFrame) {
+    if (time - lastPalmGestureCheck < 100) return;
+    lastPalmGestureCheck = time;
+
+    const referenceSpace = renderer.xr.getReferenceSpace();
+    const viewerPose = referenceSpace && xrFrame?.getViewerPose(referenceSpace);
+    if (!viewerPose) {
+      for (const state of palmGestureStates) {
+        state.openSince = null;
+        state.latched = false;
+      }
+      return;
+    }
+
+    localFrame.updateWorldMatrix(true, false);
+    const viewerPosition = new THREE.Vector3(
+      viewerPose.transform.position.x,
+      viewerPose.transform.position.y,
+      viewerPose.transform.position.z
+    ).applyMatrix4(localFrame.matrixWorld);
+
+    for (let index = 0; index < palmGestureStates.length; index += 1) {
+      const state = palmGestureStates[index];
+      const hand = renderer.xr.getHand(index);
+      const interactionController = controllers[index];
+      const openPalm = renderer.xr.isPresenting
+        && interactionController.handInput
+        && hand.visible
+        && !hand.inputState?.pinching
+        && !interactionController.grabbed
+        && isOpenPalmFacingViewer(hand, viewerPosition);
+
+      if (!openPalm) {
+        state.openSince = null;
+        state.latched = false;
+        continue;
+      }
+      if (state.latched) continue;
+      state.openSince ??= time;
+      if (time - state.openSince < 650) continue;
+
+      state.latched = true;
+      if (time - lastPalmToggle < 1000) continue;
+      lastPalmToggle = time;
+      unlockAudio();
+      onInventoryToggle(hand);
+    }
+  }
+
+  function updateXrInteraction(time, xrFrame) {
     if (!renderer.xr.isPresenting) {
       for (const interactionController of controllers) {
         interactionController.ray.visible = false;
         interactionController.grabbed = null;
       }
+      for (const state of palmGestureStates) {
+        state.openSince = null;
+        state.latched = false;
+      }
       return;
     }
+
+    updatePalmGesture(time, xrFrame);
 
     let nextHoveredModel = null;
     const updateHover = time - lastHoverUpdate >= XR_HOVER_INTERVAL_MS;
     for (const interactionController of controllers) {
       const { controller, ray, connected } = interactionController;
-      ray.visible = connected && !interactionController.handInput;
+      ray.visible = connected;
       if (!connected) continue;
       if (interactionController.handInput) {
-        const pointer = interactionController.handPointer;
-        pointer.pointerRay.visible = Boolean(pointer.hand.visible && pointer.indexTip?.visible);
         updateControllerGrab(interactionController);
         continue;
       }
