@@ -92,19 +92,6 @@ export function createInteractionSystem({
     if (!tip?.visible) return null;
     tip.updateWorldMatrix(true, false);
     const origin = tip.getWorldPosition(new THREE.Vector3());
-    let nearestTouch = null;
-    let nearestTouchDistance = 0.075;
-    for (const { model, bounds } of interactiveModels) {
-      if (!model.visible || !isModelAction(model)) continue;
-      model.updateWorldMatrix(true, false);
-      const worldBounds = bounds.clone().applyMatrix4(model.matrixWorld);
-      const distance = worldBounds.distanceToPoint(origin);
-      if (distance > nearestTouchDistance) continue;
-      nearestTouchDistance = distance;
-      nearestTouch = { model, point: origin.clone() };
-    }
-    if (nearestTouch) return nearestTouch;
-
     const direction = new THREE.Vector3(0, 0, -1).transformDirection(tip.matrixWorld);
     raycaster.set(origin, direction);
     return findInteractiveHitAtRay();
@@ -171,8 +158,7 @@ export function createInteractionSystem({
     updateHighlights();
   }
 
-  function beginControllerGrab(interactionController) {
-    const hit = findControllerHit(interactionController.controller);
+  function beginControllerGrab(interactionController, hit = findControllerHit(interactionController.controller)) {
     if (!hit) return;
     interactionController.grabbed = {
       model: hit.model,
@@ -251,7 +237,6 @@ export function createInteractionSystem({
     controllers.push(interactionController);
   }
 
-  const hands = [];
   const handModelFactory = new XRHandModelFactory(
     null,
     (handModel) => convertMaterials(handModel)
@@ -276,15 +261,19 @@ export function createInteractionSystem({
       pointerRay.removeFromParent();
       indexTip = null;
     });
-    const handInteraction = { hand, pointerRay, get indexTip() { return indexTip; } };
-    hands.push(handInteraction);
+    const interactionController = controllers[index];
+    hand.addEventListener("pinchend", () => {
+      interactionController.grabbed = null;
+    });
     hand.addEventListener("pinchstart", () => {
       if (!renderer.xr.isPresenting) return;
       const hit = findHandHit(hand);
-      if (!hit || !isModelAction(hit.model)) return;
+      if (!hit) return;
       unlockAudio();
-      onModelActivate(hit.model, hand);
+      if (isModelAction(hit.model)) onModelActivate(hit.model, hand);
+      else beginControllerGrab(interactionController, hit);
     });
+    interactionController.handPointer = { hand, pointerRay, get indexTip() { return indexTip; } };
   }
 
   renderer.domElement.addEventListener("pointerdown", (event) => {
@@ -354,7 +343,6 @@ export function createInteractionSystem({
         interactionController.ray.visible = false;
         interactionController.grabbed = null;
       }
-      for (const { pointerRay } of hands) pointerRay.visible = false;
       return;
     }
 
@@ -364,18 +352,15 @@ export function createInteractionSystem({
       const { controller, ray, connected } = interactionController;
       ray.visible = connected && !interactionController.handInput;
       if (!connected) continue;
-      if (interactionController.handInput) continue;
+      if (interactionController.handInput) {
+        const pointer = interactionController.handPointer;
+        pointer.pointerRay.visible = Boolean(pointer.hand.visible && pointer.indexTip?.visible);
+        updateControllerGrab(interactionController);
+        continue;
+      }
       updateControllerGrab(interactionController);
       if (updateHover && !nextHoveredModel) {
         nextHoveredModel = findControllerHit(controller)?.model ?? null;
-      }
-    }
-    for (const { hand, pointerRay, indexTip } of hands) {
-      const tracked = hand.visible && indexTip?.visible;
-      pointerRay.visible = Boolean(tracked);
-      if (!tracked) continue;
-      if (updateHover && !nextHoveredModel) {
-        nextHoveredModel = findHandHit(hand)?.model ?? null;
       }
     }
     if (updateHover) {
