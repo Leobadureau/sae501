@@ -86,6 +86,17 @@ export function createInteractionSystem({
     return findInteractiveHitAtRay();
   }
 
+  function findHandHit(hand) {
+    hand.updateWorldMatrix(true, true);
+    const tip = hand.joints?.["index-finger-tip"];
+    if (!tip?.visible) return null;
+    tip.updateWorldMatrix(true, false);
+    const origin = tip.getWorldPosition(new THREE.Vector3());
+    const direction = new THREE.Vector3(0, 0, -1).transformDirection(tip.matrixWorld);
+    raycaster.set(origin, direction);
+    return findInteractiveHitAtRay();
+  }
+
   function updateHighlights() {
     for (const { model, highlight } of interactiveModels) {
       highlight.visible = model.visible && (model === hoveredModel || model === selectedModel);
@@ -198,12 +209,14 @@ export function createInteractionSystem({
     ray.visible = false;
     controller.add(ray);
 
-    const interactionController = { controller, ray, connected: false, grabbed: null };
-    controller.addEventListener("connected", () => {
+    const interactionController = { controller, ray, connected: false, handInput: false, grabbed: null };
+    controller.addEventListener("connected", (event) => {
       interactionController.connected = true;
+      interactionController.handInput = Boolean(event.data?.hand);
     });
     controller.addEventListener("disconnected", () => {
       interactionController.connected = false;
+      interactionController.handInput = false;
       ray.visible = false;
       interactionController.grabbed = null;
     });
@@ -212,6 +225,7 @@ export function createInteractionSystem({
       onInventoryToggle(controller);
     });
     controller.addEventListener("select", () => {
+      if (interactionController.handInput) return;
       const hit = findControllerHit(controller);
       if (hit && isModelAction(hit.model)) {
         unlockAudio();
@@ -224,6 +238,7 @@ export function createInteractionSystem({
     controllers.push(interactionController);
   }
 
+  const hands = [];
   const handModelFactory = new XRHandModelFactory(
     null,
     (handModel) => convertMaterials(handModel)
@@ -232,6 +247,31 @@ export function createInteractionSystem({
     const hand = renderer.xr.getHand(index);
     hand.add(handModelFactory.createHandModel(hand, "mesh"));
     localFrame.add(hand);
+    const pointerRay = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(0, 0, -1)]),
+      new THREE.LineBasicMaterial({ color: 0x65e6c5, transparent: true, opacity: 0.85 })
+    );
+    pointerRay.scale.z = 10;
+    pointerRay.visible = false;
+    let indexTip = null;
+    hand.addEventListener("connected", () => {
+      indexTip = hand.joints?.["index-finger-tip"] ?? null;
+      indexTip?.add(pointerRay);
+    });
+    hand.addEventListener("disconnected", () => {
+      pointerRay.visible = false;
+      pointerRay.removeFromParent();
+      indexTip = null;
+    });
+    const handInteraction = { hand, pointerRay, get indexTip() { return indexTip; } };
+    hands.push(handInteraction);
+    hand.addEventListener("pinchstart", () => {
+      if (!renderer.xr.isPresenting) return;
+      const hit = findHandHit(hand);
+      if (!hit || !isModelAction(hit.model)) return;
+      unlockAudio();
+      onModelActivate(hit.model, hand);
+    });
   }
 
   renderer.domElement.addEventListener("pointerdown", (event) => {
@@ -301,6 +341,7 @@ export function createInteractionSystem({
         interactionController.ray.visible = false;
         interactionController.grabbed = null;
       }
+      for (const { pointerRay } of hands) pointerRay.visible = false;
       return;
     }
 
@@ -308,11 +349,20 @@ export function createInteractionSystem({
     const updateHover = time - lastHoverUpdate >= XR_HOVER_INTERVAL_MS;
     for (const interactionController of controllers) {
       const { controller, ray, connected } = interactionController;
-      ray.visible = connected;
+      ray.visible = connected && !interactionController.handInput;
       if (!connected) continue;
+      if (interactionController.handInput) continue;
       updateControllerGrab(interactionController);
       if (updateHover && !nextHoveredModel) {
         nextHoveredModel = findControllerHit(controller)?.model ?? null;
+      }
+    }
+    for (const { hand, pointerRay, indexTip } of hands) {
+      const tracked = hand.visible && indexTip?.visible;
+      pointerRay.visible = Boolean(tracked);
+      if (!tracked) continue;
+      if (updateHover && !nextHoveredModel) {
+        nextHoveredModel = findHandHit(hand)?.model ?? null;
       }
     }
     if (updateHover) {

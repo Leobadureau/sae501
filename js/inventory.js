@@ -56,8 +56,50 @@ export function createInventorySystem({
   vrPanel.scale.setScalar(1.2);
   camera.add(vrPanel);
 
+  const vrToggle = new THREE.Group();
+  vrToggle.name = "aldila-vr-inventory-toggle";
+  vrToggle.position.set(0, -0.58, -1.05);
+  camera.add(vrToggle);
+  const vrToggleButton = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.46, 0.16),
+    new THREE.MeshBasicMaterial({
+      color: 0x171512,
+      transparent: true,
+      opacity: 0.82,
+      side: THREE.DoubleSide,
+      depthTest: false,
+      depthWrite: false,
+    })
+  );
+  vrToggleButton.userData.inventoryAction = "inventory-toggle";
+  vrToggleButton.renderOrder = 1005;
+  vrToggle.add(vrToggleButton);
+  const vrToggleLabel = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.42, 0.11),
+    new THREE.MeshBasicMaterial({
+      map: makeLabel("Pincer · inventaire"),
+      transparent: true,
+      opacity: 1,
+      side: THREE.DoubleSide,
+      depthTest: false,
+      depthWrite: false,
+    })
+  );
+  vrToggleLabel.position.z = 0.003;
+  vrToggleLabel.renderOrder = 1006;
+  vrToggle.add(vrToggleLabel);
+
   const interactiveModels = [];
   const buttonViews = new Map();
+  vrToggle.visible = false;
+  interactiveModels.push({
+    model: vrToggleButton,
+    highlight: new THREE.Object3D(),
+    bounds: new THREE.Box3(
+      new THREE.Vector3(-0.23, -0.08, -0.01),
+      new THREE.Vector3(0.23, 0.08, 0.01)
+    ),
+  });
 
   function makeLabel(text) {
     const canvas = document.createElement("canvas");
@@ -230,6 +272,8 @@ export function createInventorySystem({
   function syncView() {
     const xrActive = renderer.xr.isPresenting;
     vrPanel.visible = opened && bagOwned && xrActive;
+    vrToggle.visible = bagOwned && xrActive;
+    vrToggleButton.visible = vrToggle.visible;
     for (const { button } of buttonViews.values()) button.visible = vrPanel.visible;
     if (panel) panel.hidden = !opened || !bagOwned || xrActive;
     if (toggleButton) {
@@ -306,6 +350,10 @@ export function createInventorySystem({
   }
 
   function select(key) {
+    if (key === "inventory-toggle") {
+      toggle();
+      return true;
+    }
     if (!availableItems.has(key)) return false;
     const accepted = onSelectItem(key);
     if (accepted === false) return false;
@@ -341,8 +389,9 @@ export function createInventorySystem({
       syncView();
     },
     isAction: (model) => Boolean(model?.userData?.inventoryAction)
-      && opened
-      && renderer.xr.isPresenting,
+      && renderer.xr.isPresenting
+      && bagOwned
+      && (model.userData.inventoryAction === "inventory-toggle" || opened),
     setBagOwned(value) {
       bagOwned = Boolean(value);
       refresh();
