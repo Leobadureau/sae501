@@ -7,6 +7,18 @@
   pointer-events: none;
 }
 
+.visually-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
 .narrative-prompt,
 .collectible-card {
   position: fixed;
@@ -148,6 +160,11 @@
 body.inventory-open canvas {
   filter: grayscale(1) brightness(0.54) contrast(1.08);
   transition: filter 650ms ease;
+}
+
+.inventory-preview-canvas {
+  z-index: 24;
+  pointer-events: none;
 }
 
 body.inventory-open::after {

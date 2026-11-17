@@ -1,9 +1,5 @@
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-
-const ITEM_ART = {
-  "corsica-map": "./assets/images/inventory-map.svg",
-  rope: "./assets/images/inventory-rope.svg",
-};
+import { DRACOLoader } from "three/addons/loaders/DRACOLoader.js";
 
 const ITEM_MODELS = {
   "corsica-map": "./assets/models/Carte.glb",
@@ -12,6 +8,7 @@ const ITEM_MODELS = {
 
 export function createInventorySystem({
   THREE,
+  dracoLoader,
   camera,
   renderer,
   panel,
@@ -22,12 +19,35 @@ export function createInventorySystem({
   onSelectItem = () => false,
 }) {
   const availableItems = new Set();
-  const textureLoader = new THREE.TextureLoader();
   const gltfLoader = new GLTFLoader();
-  const itemArtTextures = new Map();
+  const inventoryDracoLoader = dracoLoader ?? new DRACOLoader();
+  if (!dracoLoader) {
+    inventoryDracoLoader.setDecoderPath("https://www.gstatic.com/draco/versioned/decoders/1.5.7/");
+  }
+  gltfLoader.setDRACOLoader(inventoryDracoLoader);
   let bagOwned = false;
   let opened = false;
   let pcActive = false;
+
+  const desktopPreviewScene = new THREE.Scene();
+  const desktopPreviewCamera = new THREE.PerspectiveCamera(32, 1, 0.01, 20);
+  desktopPreviewCamera.position.set(0, 0, 3.1);
+  desktopPreviewScene.add(new THREE.AmbientLight(0xffffff, 1.8));
+  const previewKeyLight = new THREE.DirectionalLight(0xffffff, 2.4);
+  previewKeyLight.position.set(-2, 3, 4);
+  desktopPreviewScene.add(previewKeyLight);
+  const desktopPreviewModels = new Map();
+  const previewCanvas = document.createElement("canvas");
+  previewCanvas.className = "inventory-preview-canvas";
+  previewCanvas.setAttribute("aria-hidden", "true");
+  document.body.append(previewCanvas);
+  const previewRenderer = new THREE.WebGLRenderer({ canvas: previewCanvas, alpha: true, antialias: true });
+  previewRenderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+  previewRenderer.setSize(window.innerWidth, window.innerHeight, false);
+  previewRenderer.setClearColor(0x000000, 0);
+  previewRenderer.outputColorSpace = THREE.SRGBColorSpace;
+  previewRenderer.toneMapping = THREE.ACESFilmicToneMapping;
+  previewRenderer.toneMappingExposure = 1.15;
 
   const vrPanel = new THREE.Group();
   vrPanel.name = "aldila-vr-inventory";
@@ -55,15 +75,6 @@ export function createInventorySystem({
     return texture;
   }
 
-  function getArtTexture(key) {
-    if (!itemArtTextures.has(key)) {
-      const texture = textureLoader.load(ITEM_ART[key]);
-      texture.colorSpace = THREE.SRGBColorSpace;
-      itemArtTextures.set(key, texture);
-    }
-    return itemArtTextures.get(key);
-  }
-
   function makeButton(key, label, x) {
     const button = new THREE.Mesh(
       new THREE.PlaneGeometry(0.76, 1.06),
@@ -79,19 +90,6 @@ export function createInventorySystem({
     button.position.set(x, -0.02, 0.02);
     button.userData.inventoryAction = key;
     button.renderOrder = 1001;
-
-    const artMaterial = new THREE.MeshBasicMaterial({
-      map: getArtTexture(key),
-      transparent: true,
-      opacity: 0.55,
-      side: THREE.DoubleSide,
-      depthTest: false,
-      depthWrite: false,
-    });
-    const art = new THREE.Mesh(new THREE.PlaneGeometry(0.58, 0.42), artMaterial);
-    art.position.set(x, 0.13, 0.03);
-    art.renderOrder = 1002;
-    vrPanel.add(art);
 
     const ringMaterial = new THREE.MeshBasicMaterial({
       color: 0xe5ddd1,
@@ -150,7 +148,7 @@ export function createInventorySystem({
 
     vrPanel.add(button);
     button.visible = false;
-    buttonViews.set(key, { button, art, artMaterial, ringMaterial, labelMaterial: labelMesh.material, ruleMaterial });
+    buttonViews.set(key, { button, ringMaterial, labelMaterial: labelMesh.material, ruleMaterial });
     interactiveModels.push({
       model: button,
       highlight: new THREE.Object3D(),
@@ -164,30 +162,63 @@ export function createInventorySystem({
   makeButton("corsica-map", "Carte de Corse", -0.47);
   makeButton("rope", "Corde", 0.47);
 
+  function normalizeModel(model, maxSize, orientForScreen = false) {
+    model.updateMatrixWorld(true);
+    const bounds = new THREE.Box3().setFromObject(model);
+    const center = bounds.getCenter(new THREE.Vector3());
+    const size = bounds.getSize(new THREE.Vector3());
+    const scale = maxSize / Math.max(size.x, size.y, size.z, 0.001);
+    model.scale.setScalar(scale);
+    model.position.set(-center.x * scale, -center.y * scale, -center.z * scale);
+    // These props are authored lying flat; tilt them toward the desktop camera.
+    if (orientForScreen && size.y < Math.max(size.x, size.z) * 0.25) {
+      model.rotation.x = -Math.PI / 2;
+    }
+    model.traverse((child) => {
+      if (!child.isMesh) return;
+      child.material = Array.isArray(child.material)
+        ? child.material.map((material) => material.clone())
+        : child.material.clone();
+      const materials = Array.isArray(child.material) ? child.material : [child.material];
+      for (const material of materials) {
+        if (orientForScreen) material.side = THREE.DoubleSide;
+        material.userData.inventoryOriginalOpacity = material.opacity;
+        material.userData.inventoryOriginalTransparent = material.transparent;
+      }
+    });
+    return model;
+  }
+
+  function setPreviewAvailability(key, model) {
+    const available = availableItems.has(key);
+    model.traverse((child) => {
+      if (!child.isMesh) return;
+      const materials = Array.isArray(child.material) ? child.material : [child.material];
+      for (const material of materials) {
+        material.opacity = available ? material.userData.inventoryOriginalOpacity : 0.58;
+        material.transparent = available || material.userData.inventoryOriginalTransparent
+          ? material.userData.inventoryOriginalTransparent
+          : true;
+        material.needsUpdate = true;
+      }
+    });
+  }
+
   async function loadVrPreview(key, x) {
     try {
       const loaded = await gltfLoader.loadAsync(ITEM_MODELS[key]);
-      const model = loaded.scene;
-      model.updateMatrixWorld(true);
-      const bounds = new THREE.Box3().setFromObject(model);
-      const center = bounds.getCenter(new THREE.Vector3());
-      const size = bounds.getSize(new THREE.Vector3());
-      const scale = 0.56 / Math.max(size.x, size.y, size.z, 0.001);
-      model.scale.setScalar(scale);
-      model.position.set(-center.x * scale, -center.y * scale, -center.z * scale);
+      const source = loaded.scene;
+      const desktopModel = normalizeModel(source.clone(true), 1.55, true);
+      desktopPreviewScene.add(desktopModel);
+      desktopPreviewModels.set(key, desktopModel);
+      setPreviewAvailability(key, desktopModel);
+
+      const model = normalizeModel(source.clone(true), 0.56);
       model.position.add(new THREE.Vector3(x, 0.13, 0.065));
-      model.traverse((child) => {
-        if (!child.isMesh) return;
-        child.material = Array.isArray(child.material)
-          ? child.material.map((material) => material.clone())
-          : child.material.clone();
-        child.renderOrder = 1004;
-      });
+      model.traverse((child) => { if (child.isMesh) child.renderOrder = 1004; });
       vrPanel.add(model);
-      const view = buttonViews.get(key);
-      if (view) view.art.visible = false;
     } catch (error) {
-      console.warn(`Aperçu VR indisponible pour ${key}.`, error);
+      console.warn(`Aperçu 3D indisponible pour ${key}.`, error);
     }
   }
 
@@ -219,11 +250,11 @@ export function createInventorySystem({
     }
     for (const [key, view] of buttonViews) {
       const usable = availableItems.has(key);
-      const opacity = usable ? 1 : 0.58;
-      view.artMaterial.opacity = opacity;
       view.ringMaterial.opacity = usable ? 0.78 : 0.38;
       view.labelMaterial.opacity = usable ? 1 : 0.62;
       view.ruleMaterial.opacity = usable ? 0.78 : 0.4;
+      const model = desktopPreviewModels.get(key);
+      if (model) setPreviewAvailability(key, model);
     }
     syncView();
   }
@@ -242,6 +273,36 @@ export function createInventorySystem({
   function toggle() {
     if (opened) close();
     else open();
+  }
+
+  function renderDesktopPreviews() {
+    const visible = opened && bagOwned && pcActive && !renderer.xr.isPresenting;
+    previewCanvas.style.display = visible ? "block" : "none";
+    if (!visible || desktopPreviewModels.size === 0) return;
+
+    const canvasBounds = previewCanvas.getBoundingClientRect();
+    if (!canvasBounds.width || !canvasBounds.height) return;
+    previewRenderer.setScissorTest(true);
+
+    for (const [key, model] of desktopPreviewModels) {
+      const art = itemButtons.get(key)?.querySelector(".inventory-art");
+      if (!art) continue;
+      const bounds = art.getBoundingClientRect();
+      const left = bounds.left - canvasBounds.left;
+      const bottom = canvasBounds.bottom - bounds.bottom;
+      desktopPreviewCamera.aspect = bounds.width / Math.max(bounds.height, 1);
+      desktopPreviewCamera.updateProjectionMatrix();
+      previewRenderer.setViewport(left, bottom, bounds.width, bounds.height);
+      previewRenderer.setScissor(left, bottom, bounds.width, bounds.height);
+      previewRenderer.clear(true, true, true);
+      for (const [otherKey, otherModel] of desktopPreviewModels) {
+        otherModel.visible = otherKey === key;
+      }
+      model.rotation.y += 0.0018;
+      previewRenderer.render(desktopPreviewScene, desktopPreviewCamera);
+    }
+    for (const model of desktopPreviewModels.values()) model.visible = true;
+    previewRenderer.setScissorTest(false);
   }
 
   function select(key) {
@@ -293,5 +354,10 @@ export function createInventorySystem({
       refresh();
     },
     getInteractiveModels: () => interactiveModels,
+    renderDesktopPreviews,
+    resizeDesktopPreviews() {
+      previewRenderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+      previewRenderer.setSize(window.innerWidth, window.innerHeight, false);
+    },
   };
 }

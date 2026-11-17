@@ -7,8 +7,8 @@ import { addModelGlow, convertToBasicMaterials, waitForModelTextures } from "./m
 import { createMarkerDetection } from "./marker-detection.js?v=lower-scan-latency-20261116";
 import { createAudioSystem } from "./audio.js";
 import { createInteractionSystem } from "./interactions.js?v=cinematic-inventory-20261117";
-import { createNarrativeController } from "./narrative.js?v=cinematic-inventory-20261117";
-import { createInventorySystem } from "./inventory.js?v=cinematic-inventory-20261117";
+import { createNarrativeController } from "./narrative.js?v=wrong-choice-audio-20261117";
+import { createInventorySystem } from "./inventory.js?v=glb-inventory-draco-20261117";
 import {
   SPAWN_POSITION,
   PC_CAMERA_HEIGHT_OFFSET,
@@ -1101,6 +1101,7 @@ const inventoryButtons = new Map(
 );
 inventory = createInventorySystem({
   THREE,
+  dracoLoader,
   camera,
   renderer,
   panel: document.getElementById("inventory-panel"),
@@ -1136,6 +1137,7 @@ function onWindowResize() {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
+  inventory?.resizeDesktopPreviews();
 }
 
 window.addEventListener("resize", onWindowResize, false);
@@ -1424,6 +1426,7 @@ renderer.setAnimationLoop(function animate(time, xrFrame) {
     }
     audio.activateWorld();
   }
+  inventory?.renderDesktopPreviews();
 });
 
 window.addEventListener("beforeunload", () => {

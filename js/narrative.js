@@ -1,7 +1,7 @@
 const NARRATION_FILES = Array.from(
   { length: 6 },
   (_, index) => `Narration%20FR/FR_${index + 1}.mp3`
-);
+).concat("Narration%20FR/FR_erreur.mp3");
 
 export function createNarrativeController({
   audio,
@@ -72,8 +72,14 @@ export function createNarrativeController({
 
   async function selectInventoryItem(item) {
     if (busy) return false;
-    if (stage === "map" && item !== "corsica-map") return false;
-    if (stage === "rope" && item !== "rope") return false;
+    if (stage === "map" && item !== "corsica-map") {
+      playWrongChoice();
+      return false;
+    }
+    if (stage === "rope" && item !== "rope") {
+      playWrongChoice();
+      return false;
+    }
     if (stage !== "map" && stage !== "rope") return false;
 
     busy = true;
@@ -84,7 +90,7 @@ export function createNarrativeController({
         showMap();
         await play(2);
         stage = "rope";
-        updateView({ label: "Ouvrir l’inventaire et choisir la corde", action: "inventory" }, false, ["rope"]);
+        updateView({ label: "Ouvrir l’inventaire et choisir la corde", action: "inventory" }, false, ["corsica-map", "rope"]);
       } else {
         stage = "rope-story";
         showRope();
@@ -102,6 +108,14 @@ export function createNarrativeController({
     }
   }
 
+  function playWrongChoice() {
+    if (!getShepherd()) return;
+    busy = true;
+    void play(6)
+      .catch((error) => console.error("Impossible de lire FR_erreur.", error))
+      .finally(() => { busy = false; });
+  }
+
   async function activateShepherd() {
     if (busy) return;
     busy = true;
@@ -113,7 +127,7 @@ export function createNarrativeController({
         stage = "seated-story";
         await play(1);
         stage = "map";
-        updateView({ label: "Ouvrir l’inventaire et choisir la carte", action: "inventory" }, false, ["corsica-map"]);
+        updateView({ label: "Ouvrir l’inventaire et choisir la carte", action: "inventory" }, false, ["corsica-map", "rope"]);
       } else if (stage === "return-to-shepherd") {
         closeInventory();
         stage = "handoff";
