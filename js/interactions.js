@@ -92,6 +92,19 @@ export function createInteractionSystem({
     if (!tip?.visible) return null;
     tip.updateWorldMatrix(true, false);
     const origin = tip.getWorldPosition(new THREE.Vector3());
+    let nearestTouch = null;
+    let nearestTouchDistance = 0.075;
+    for (const { model, bounds } of interactiveModels) {
+      if (!model.visible || !isModelAction(model)) continue;
+      model.updateWorldMatrix(true, false);
+      const worldBounds = bounds.clone().applyMatrix4(model.matrixWorld);
+      const distance = worldBounds.distanceToPoint(origin);
+      if (distance > nearestTouchDistance) continue;
+      nearestTouchDistance = distance;
+      nearestTouch = { model, point: origin.clone() };
+    }
+    if (nearestTouch) return nearestTouch;
+
     const direction = new THREE.Vector3(0, 0, -1).transformDirection(tip.matrixWorld);
     raycaster.set(origin, direction);
     return findInteractiveHitAtRay();
