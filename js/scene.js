@@ -4,9 +4,9 @@ import { SparkRenderer } from "@sparkjsdev/spark";
 export const SPAWN_POSITION = new THREE.Vector3(0, 1.5, -3.9);
 export const PC_CAMERA_HEIGHT_OFFSET = -0.15;
 export const SEATED_CAMERA_POSITION = new THREE.Vector3(
-  0.1793437486,
-  0.7647448313,
-  -5.6177672547
+  0.95,
+  0.75,
+  -4.8
 );
 export const SEATED_CAMERA_ROTATION = new THREE.Quaternion(
   0.0310214188,

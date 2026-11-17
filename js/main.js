@@ -579,8 +579,10 @@ function playShepherdDeparture(model, bag) {
       activeWalks.delete(mixer);
       activeAnimationMixers.delete(mixer);
       stopFootsteps();
-      mixer.stopAllAction();
-      mixer.uncacheRoot(model);
+      window.setTimeout(() => {
+        mixer.stopAllAction();
+        mixer.uncacheRoot(model);
+      }, 0);
       void fadeModelOut(model).then(resolve);
     });
     if (talkAction) walkAction.crossFadeFrom(talkAction, 0.65, false).play();
@@ -712,24 +714,31 @@ function showCorsicaMap() {
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   const card = new THREE.Group();
+  card.userData.narrativeItem = "corsica-map";
+  card.renderOrder = 1000;
   const backing = new THREE.Mesh(
     new THREE.PlaneGeometry(0.34, 0.47),
-    new THREE.MeshBasicMaterial({ color: 0x241f19, side: THREE.DoubleSide })
+    new THREE.MeshBasicMaterial({ color: 0x241f19, side: THREE.DoubleSide, depthTest: false, depthWrite: false })
   );
+  backing.renderOrder = 1000;
   backing.position.z = -0.004;
   const face = new THREE.Mesh(
     new THREE.PlaneGeometry(0.32, 0.45),
-    new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide })
+    new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide, depthTest: false, depthWrite: false })
   );
+  face.renderOrder = 1001;
   card.add(backing, face);
   placeNarrativeVisualInFront(card);
 }
 
 function showRope() {
   const rope = new THREE.Group();
+  rope.userData.narrativeItem = "rope";
   const material = new THREE.MeshBasicMaterial({ color: 0xb2966d });
   for (let index = 0; index < 5; index += 1) {
     const loop = new THREE.Mesh(new THREE.TorusGeometry(0.095, 0.012, 8, 32), material);
+    loop.material.depthTest = false;
+    loop.renderOrder = 1000;
     loop.position.x = (index - 2) * 0.018;
     loop.rotation.z = (index - 2) * 0.14;
     rope.add(loop);
@@ -748,6 +757,7 @@ function showRope() {
     ),
     material
   );
+  tail.renderOrder = 1000;
   rope.add(tail);
   placeNarrativeVisualInFront(rope, 0.8);
 }
@@ -778,8 +788,9 @@ function showCollectibleCard() {
   collectibleModel.userData.narrativeCollectible = true;
   const card = new THREE.Mesh(
     new THREE.PlaneGeometry(0.28, 0.42),
-    new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide })
+    new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide, depthTest: false, depthWrite: false })
   );
+  card.renderOrder = 1000;
   collectibleModel.add(card);
   const shepherdPosition = shepherd.getWorldPosition(new THREE.Vector3());
   const cameraPosition = camera.getWorldPosition(new THREE.Vector3());
@@ -1251,7 +1262,7 @@ document.addEventListener("keydown", (event) => {
 });
 
 renderer.setAnimationLoop(function animate(time, xrFrame) {
-  const animationDelta = Math.min(animationClock.getDelta(), 0.1);
+  const animationDelta = animationClock.getDelta();
   let ambientAnimationFrame = false;
   if (
     ambientAnimationMixers.size > 0

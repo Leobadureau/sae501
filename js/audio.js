@@ -72,12 +72,14 @@ export function createAudioSystem({ THREE, audioListener, scene, renderer, music
     activeNarrationSounds.add(sound);
 
     return new Promise((resolve) => {
-      sound.onEnded(() => {
+      const handleThreeEnded = sound.onEnded.bind(sound);
+      sound.onEnded = () => {
+        handleThreeEnded();
         activeNarrationSounds.delete(sound);
         model.remove(sound);
         sound.disconnect();
         resolve();
-      });
+      };
       const start = () => {
         if (!worldAudioEnabled || !audioHasUserGesture || audioListener.context.state !== "running") {
           window.setTimeout(start, 100);
