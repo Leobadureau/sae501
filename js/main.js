@@ -7,6 +7,7 @@ import { addModelGlow, convertToBasicMaterials, waitForModelTextures } from "./m
 import { createMarkerDetection } from "./marker-detection.js?v=lower-scan-latency-20261116";
 import { createAudioSystem } from "./audio.js";
 import { createInteractionSystem } from "./interactions.js";
+import { createNarrativeController } from "./narrative.js";
 import {
   SPAWN_POSITION,
   PC_CAMERA_HEIGHT_OFFSET,
@@ -154,7 +155,8 @@ const fbxLoader = new FBXLoader();
 
 const interactiveModels = [];
 const modelsRevealedByGrab = new Map();
-const revealedModels = new WeakSet();
+const loadedModels = new Map();
+const shepherdAnimationStates = new WeakMap();
 const activeAnimationMixers = new Set();
 const ambientAnimationMixers = new Set();
 const cameraFacingFires = new Set();
@@ -324,10 +326,13 @@ function playAmbientAnimation(model, clipName) {
 }
 
 function playShepherdAnimation(model) {
+  let finishArrival;
+  const arrival = new Promise((resolve) => { finishArrival = resolve; });
   const clips = model.animations ?? [];
   if (clips.length === 0) {
     console.warn(`No animation clips found for ${model.userData.filename}`);
-    return;
+    finishArrival();
+    return arrival;
   }
 
   const walkClip = clips.find((animation) =>
@@ -346,7 +351,10 @@ function playShepherdAnimation(model) {
       `Animation "parler en étant assis.001" not found for ${model.userData.filename}. Available clips: ${clips.map((animation) => animation.name).join(", ")}`
     );
   }
-  if (!walkClip && !talkClip) return;
+  if (!walkClip && !talkClip) {
+    finishArrival();
+    return arrival;
+  }
 
   const finalPosition = model.position.clone();
   const mixer = new THREE.AnimationMixer(model);
@@ -384,8 +392,10 @@ function playShepherdAnimation(model) {
         window.setTimeout(() => {
           stopFootsteps();
         }, ANIMATION_CROSSFADE_DURATION * 1000);
+        window.setTimeout(finishArrival, ANIMATION_CROSSFADE_DURATION * 1000);
       } else {
         stopFootsteps();
+        finishArrival();
       }
     });
   }
@@ -396,6 +406,7 @@ function playShepherdAnimation(model) {
 
     if (!walkAction) {
       talkAction.play();
+      finishArrival();
     }
 
     mixer.addEventListener("finished", (event) => {
@@ -435,27 +446,57 @@ function playShepherdAnimation(model) {
   }
 
   activeAnimationMixers.add(mixer);
+  shepherdAnimationStates.set(model, { mixer, walkClip, walkAction, talkAction });
   console.info(
     `Playing shepherd arrival: ${walkClip?.name ?? "walking unavailable"}${talkClip ? `, then ${talkClip.name} (rotations amplified 6x)` : ""}`
   );
+  return arrival;
 }
 
-function startModelReveal(model, sourceModel = null) {
-  if (revealedModels.has(model)) return;
-  revealedModels.add(model);
+function playShepherdDeparture(model, bag) {
+  if (!model) return Promise.resolve();
+  const previous = shepherdAnimationStates.get(model);
+  previous?.mixer.stopAllAction();
+  if (previous) activeAnimationMixers.delete(previous.mixer);
 
-  playRevealFlash();
-  model.visible = true;
-  enterSeatedView();
-  playShepherdAnimation(model);
-  audio.startShepherdSpeech(model);
-  audio.scheduleRevealSounds();
-  if (sourceModel) {
-    sourceModel.visible = false;
-    updateInteractionHighlights();
+  if (bag) {
+    model.add(bag);
+    bag.position.set(0.3, 0.65, 0.12);
+    bag.quaternion.identity();
+    bag.scale.setScalar(0.1);
+    bag.visible = true;
   }
+
+  const walkClip = previous?.walkClip;
+  if (!walkClip) {
+    model.visible = false;
+    return Promise.resolve();
+  }
+
+  const mixer = new THREE.AnimationMixer(model);
+  const action = mixer.clipAction(stabilizeWalkRoot(walkClip.clone()));
+  action.setLoop(THREE.LoopOnce, 1);
+  action.clampWhenFinished = true;
+  const startPosition = model.position.clone();
+  const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(model.quaternion).normalize();
+  const finalPosition = startPosition.clone().addScaledVector(forward, 3.5);
+  activeWalks.set(mixer, { model, startPosition, finalPosition, elapsed: 0, duration: walkClip.duration });
+  activeAnimationMixers.add(mixer);
   renderEnabled = true;
   lastMoved = performance.now();
+
+  return new Promise((resolve) => {
+    mixer.addEventListener("finished", () => {
+      model.position.copy(finalPosition);
+      activeWalks.delete(mixer);
+      activeAnimationMixers.delete(mixer);
+      mixer.stopAllAction();
+      mixer.uncacheRoot(model);
+      model.visible = false;
+      resolve();
+    });
+    action.play();
+  });
 }
 
 async function loadMesh(mesh) {
@@ -502,6 +543,7 @@ async function loadMesh(mesh) {
     model.visible = mesh.visible ?? true;
 
     scene.add(model);
+    loadedModels.set(mesh.filename, model);
     if (mesh.fireAnimation) {
       playAmbientAnimation(model, mesh.fireAnimation.clip);
       if (mesh.fireAnimation.faceCamera) {
@@ -587,8 +629,55 @@ interactionSystem = createInteractionSystem({
   interactiveModels,
   modelsRevealedByGrab,
   unlockAudio: audio.unlockSpatialAudio,
-  revealModel: startModelReveal,
+  revealModel: () => {},
   convertMaterials: convertToBasicMaterials,
+  isModelAction: (model) => model === loadedModels.get("assets/models/Sacoche1-optimized.glb"),
+  onModelActivate: () => {
+    audio.unlockSpatialAudio();
+    void narrative.interact();
+  },
+});
+
+const narrativePrompt = document.getElementById("narrative-prompt");
+const narrativeText = document.getElementById("narrative-text");
+const narrativeAction = document.getElementById("narrative-action");
+const collectibleCard = document.getElementById("collectible-card");
+const narrative = createNarrativeController({
+  audio,
+  getShepherd: () => loadedModels.get("assets/models/old man 3d model/tripo_convert_ad709b62-a73c-451d-b686-15168f7a6180.fbx"),
+  getBag: () => loadedModels.get("assets/models/Sacoche1-optimized.glb"),
+  onChange: ({ prompt, reward }) => {
+    if (narrativePrompt) narrativePrompt.hidden = !prompt;
+    if (prompt && narrativeText && narrativeAction) {
+      narrativeText.textContent = prompt.label;
+      narrativeAction.textContent = prompt.label;
+      narrativeAction.dataset.action = prompt.action;
+    }
+    if (collectibleCard && reward) collectibleCard.hidden = false;
+  },
+  animateArrival: (model) => {
+    if (model) {
+      playRevealFlash();
+      enterSeatedView();
+      return playShepherdAnimation(model);
+    }
+    return Promise.resolve();
+  },
+  animateDeparture: playShepherdDeparture,
+});
+narrative.load().catch((error) => {
+  console.error("Impossible de charger les audios de narration.", error);
+  if (narrativePrompt && narrativeText) {
+    narrativePrompt.hidden = false;
+    narrativeText.textContent = "Les dialogues du berger n’ont pas pu être chargés.";
+  }
+});
+narrativeAction?.addEventListener("click", () => {
+  audio.unlockSpatialAudio();
+  void narrative.interact();
+});
+document.getElementById("collectible-close")?.addEventListener("click", () => {
+  if (collectibleCard) collectibleCard.hidden = true;
 });
 const xrInteractionControllers = interactionSystem.controllers;
 const updateXrInteraction = (time) => interactionSystem.updateXrInteraction(time);
@@ -848,6 +937,7 @@ renderer.setAnimationLoop(function animate(time, xrFrame) {
   if (!renderer.xr.isPresenting) controls.update(localFrame, camera);
   clampSeatedViewPitch();
   updateMovement(xrFrame);
+  narrative.update(localFrame.getWorldPosition(new THREE.Vector3()));
   updateXrInteraction(time);
   updateCameraFacingFires(camera);
 

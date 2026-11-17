@@ -6,6 +6,8 @@ export function createAudioSystem({ THREE, audioListener, scene, renderer, music
   const activeFootstepSounds = new Set();
   const revealSounds = [];
   const pendingTriggeredSounds = new Set();
+  const activeNarrationSounds = new Set();
+  let narrationBuffers = [];
   let musicMuted = false;
   let revealSoundsScheduled = false;
   let audioHasUserGesture = false;
@@ -46,6 +48,45 @@ export function createAudioSystem({ THREE, audioListener, scene, renderer, music
       pendingTriggeredSounds.add(sound);
     }
     startReadySounds();
+  }
+
+  function loadNarration(paths, baseUrl) {
+    const loader = new THREE.AudioLoader();
+    return Promise.all(paths.map((path) => loader.loadAsync(`${baseUrl}/${path}`)))
+      .then((buffers) => { narrationBuffers = buffers; });
+  }
+
+  function playNarration(index, model) {
+    const buffer = narrationBuffers[index];
+    if (!buffer || !model) return Promise.reject(new Error(`Narration FR_${index + 1} unavailable.`));
+
+    const sound = new THREE.PositionalAudio(audioListener);
+    sound.setBuffer(buffer);
+    sound.setLoop(false);
+    sound.setVolume(0.95);
+    sound.setRefDistance(1.2);
+    sound.setMaxDistance(24);
+    sound.setRolloffFactor(1);
+    sound.position.set(0, 0.75, 0);
+    model.add(sound);
+    activeNarrationSounds.add(sound);
+
+    return new Promise((resolve) => {
+      sound.onEnded(() => {
+        activeNarrationSounds.delete(sound);
+        model.remove(sound);
+        sound.disconnect();
+        resolve();
+      });
+      const start = () => {
+        if (!worldAudioEnabled || !audioHasUserGesture || audioListener.context.state !== "running") {
+          window.setTimeout(start, 100);
+          return;
+        }
+        sound.play();
+      };
+      start();
+    });
   }
 
   function scheduleRevealSounds() {
@@ -146,7 +187,9 @@ export function createAudioSystem({ THREE, audioListener, scene, renderer, music
   return {
     activateWorld,
     loadSounds,
+    loadNarration,
     onWorldHidden: () => setWorldVisible(false),
+    playNarration,
     scheduleRevealSounds,
     startShepherdFootsteps,
     startShepherdSpeech,

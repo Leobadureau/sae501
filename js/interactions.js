@@ -13,6 +13,8 @@ export function createInteractionSystem({
   unlockAudio,
   revealModel,
   convertMaterials,
+  isModelAction = () => false,
+  onModelActivate = () => {},
 }) {
   const raycaster = new THREE.Raycaster();
   raycaster.far = 10;
@@ -187,7 +189,15 @@ export function createInteractionSystem({
       ray.visible = false;
       interactionController.grabbed = null;
     });
-    controller.addEventListener("select", () => toggleControllerGrab(interactionController));
+    controller.addEventListener("select", () => {
+      const hit = findControllerHit(controller);
+      if (hit && isModelAction(hit.model)) {
+        unlockAudio();
+        onModelActivate(hit.model);
+        return;
+      }
+      toggleControllerGrab(interactionController);
+    });
     localFrame.add(controller);
     controllers.push(interactionController);
   }
@@ -207,6 +217,7 @@ export function createInteractionSystem({
     const hit = findPointerHit(event);
     pointerStart = { x: event.clientX, y: event.clientY, model: hit?.model ?? null };
     if (!hit) return;
+    if (isModelAction(hit.model)) return;
     defaultRotateSpeed ??= controls.pointerControls.rotateSpeed;
     beginPointerGrab(event, hit);
     controls.pointerControls.rotateSpeed = 0;
@@ -231,7 +242,9 @@ export function createInteractionSystem({
     pointerStart = null;
     if (wasGrabbing || distance > 6) return;
     const model = findPointerHit(event)?.model ?? null;
-    if (model === startModel && model) toggleSelection(model);
+    if (model !== startModel || !model) return;
+    if (isModelAction(model)) onModelActivate(model);
+    else toggleSelection(model);
   });
 
   renderer.domElement.addEventListener("pointerleave", () => {
