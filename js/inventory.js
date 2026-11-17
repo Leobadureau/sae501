@@ -1,5 +1,6 @@
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { DRACOLoader } from "three/addons/loaders/DRACOLoader.js";
+import { convertToBasicMaterials } from "./model-materials.js";
 
 const ITEM_MODELS = {
   "corsica-map": "./assets/models/Carte.glb",
@@ -58,14 +59,28 @@ export function createInventorySystem({
 
   const vrToggle = new THREE.Group();
   vrToggle.name = "aldila-vr-inventory-toggle";
-  vrToggle.position.set(0, -0.42, -0.7);
+  vrToggle.position.set(0.45, -0.45, -0.82);
   camera.add(vrToggle);
+  const iconCanvas = document.createElement("canvas");
+  iconCanvas.width = 128;
+  iconCanvas.height = 128;
+  const iconContext = iconCanvas.getContext("2d");
+  const iconTexture = new THREE.CanvasTexture(iconCanvas);
+  iconTexture.colorSpace = THREE.SRGBColorSpace;
+  new THREE.TextureLoader().load("./assets/images/Inventaire.png", (loadedTexture) => {
+    iconContext.clearRect(0, 0, iconCanvas.width, iconCanvas.height);
+    iconContext.filter = "invert(1)";
+    iconContext.drawImage(loadedTexture.image, 0, 0, iconCanvas.width, iconCanvas.height);
+    iconContext.filter = "none";
+    iconTexture.needsUpdate = true;
+    loadedTexture.dispose();
+  });
   const vrToggleButton = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.66, 0.22),
+    new THREE.PlaneGeometry(0.14, 0.14),
     new THREE.MeshBasicMaterial({
-      color: 0x171512,
+      color: 0xffffff,
       transparent: true,
-      opacity: 0.82,
+      opacity: 0,
       side: THREE.DoubleSide,
       depthTest: false,
       depthWrite: false,
@@ -74,20 +89,30 @@ export function createInventorySystem({
   vrToggleButton.userData.inventoryAction = "inventory-toggle";
   vrToggleButton.renderOrder = 1005;
   vrToggle.add(vrToggleButton);
-  const vrToggleLabel = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.6, 0.16),
+  const vrToggleRing = new THREE.Mesh(
+    new THREE.TorusGeometry(0.067, 0.002, 8, 64),
     new THREE.MeshBasicMaterial({
-      map: makeLabel("Pincer · inventaire"),
-      transparent: true,
-      opacity: 1,
+      color: 0xeee5d8,
       side: THREE.DoubleSide,
       depthTest: false,
       depthWrite: false,
     })
   );
-  vrToggleLabel.position.z = 0.003;
-  vrToggleLabel.renderOrder = 1006;
-  vrToggle.add(vrToggleLabel);
+  vrToggleRing.renderOrder = 1006;
+  vrToggle.add(vrToggleRing);
+  const vrToggleIcon = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.06, 0.06),
+    new THREE.MeshBasicMaterial({
+      map: iconTexture,
+      transparent: true,
+      side: THREE.DoubleSide,
+      depthTest: false,
+      depthWrite: false,
+    })
+  );
+  vrToggleIcon.position.z = 0.003;
+  vrToggleIcon.renderOrder = 1007;
+  vrToggle.add(vrToggleIcon);
 
   const interactiveModels = [];
   const buttonViews = new Map();
@@ -96,8 +121,8 @@ export function createInventorySystem({
     model: vrToggleButton,
     highlight: new THREE.Object3D(),
     bounds: new THREE.Box3(
-      new THREE.Vector3(-0.33, -0.11, -0.01),
-      new THREE.Vector3(0.33, 0.11, 0.01)
+      new THREE.Vector3(-0.07, -0.07, -0.01),
+      new THREE.Vector3(0.07, 0.07, 0.01)
     ),
   });
 
@@ -256,6 +281,7 @@ export function createInventorySystem({
       setPreviewAvailability(key, desktopModel);
 
       const model = normalizeModel(source.clone(true), 0.56);
+      convertToBasicMaterials(model);
       model.position.add(new THREE.Vector3(x, 0.13, 0.065));
       model.traverse((child) => { if (child.isMesh) child.renderOrder = 1004; });
       vrPanel.add(model);

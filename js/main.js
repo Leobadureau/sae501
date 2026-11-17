@@ -8,7 +8,7 @@ import { createMarkerDetection } from "./marker-detection.js?v=lower-scan-latenc
 import { createAudioSystem } from "./audio.js";
 import { createInteractionSystem } from "./interactions.js?v=vr-freeze-fix-20261117";
 import { createNarrativeController } from "./narrative.js?v=wrong-choice-audio-20261117";
-import { createInventorySystem } from "./inventory.js?v=hand-pinch-button-20261117";
+import { createInventorySystem } from "./inventory.js?v=vr-ui-textures-20261117";
 import {
   SPAWN_POSITION,
   PC_CAMERA_HEIGHT_OFFSET,
