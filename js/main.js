@@ -6,9 +6,9 @@ import { SplatMesh, SparkControls, SparkXr, utils } from "@sparkjsdev/spark";
 import { addModelGlow, convertToBasicMaterials, waitForModelTextures } from "./model-materials.js";
 import { createMarkerDetection } from "./marker-detection.js?v=lower-scan-latency-20261116";
 import { createAudioSystem } from "./audio.js";
-import { createInteractionSystem } from "./interactions.js?v=inventory-gating-20261117";
-import { createNarrativeController } from "./narrative.js?v=inventory-gating-20261117";
-import { createInventorySystem } from "./inventory.js?v=inventory-gating-20261117";
+import { createInteractionSystem } from "./interactions.js?v=shepherd-walk-on-reveal-20261117";
+import { createNarrativeController } from "./narrative.js?v=shepherd-walk-on-reveal-20261117";
+import { createInventorySystem } from "./inventory.js?v=shepherd-walk-on-reveal-20261117";
 import {
   SPAWN_POSITION,
   PC_CAMERA_HEIGHT_OFFSET,
@@ -1078,11 +1078,9 @@ const narrative = createNarrativeController({
     renderEnabled = true;
     lastMoved = performance.now();
   },
-  animateArrival: (model) => {
-    if (model) {
-      enterSeatedView();
-    }
-    if (model) return playShepherdAnimation(model);
+  animateArrival: (model, { movePlayer = true, animateShepherd = true } = {}) => {
+    if (movePlayer) enterSeatedView();
+    if (model && animateShepherd) return playShepherdAnimation(model);
     return Promise.resolve();
   },
   pickupBag: pickUpNarrativeBag,

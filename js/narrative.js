@@ -50,7 +50,8 @@ export function createNarrativeController({
       stage = "first-line";
       const shepherd = getShepherd();
       revealShepherd(shepherd);
-      await play(0);
+      const arrival = animateArrival(shepherd, { movePlayer: false });
+      await Promise.all([arrival, play(0)]);
       stage = "approach";
       updateView({ label: "Approcher le berger", action: "shepherd" });
       return true;
@@ -108,7 +109,7 @@ export function createNarrativeController({
     try {
       if (stage === "approach") {
         stage = "arrival";
-        await animateArrival(getShepherd());
+        await animateArrival(getShepherd(), { movePlayer: true, animateShepherd: false });
         stage = "seated-story";
         await play(1);
         stage = "map";
