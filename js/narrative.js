@@ -11,21 +11,23 @@ export function createNarrativeController({
   revealShepherd,
   animateArrival,
   pickupBag,
+  setBagOwned,
   animateHandoff,
   animateDeparture,
   showMap,
   showRope,
   showCollectible,
   collectReward,
+  openInventory,
+  closeInventory,
 }) {
   let started = false;
   let busy = false;
   let stage = "waiting-near-bag";
   let loadingPromise = Promise.resolve();
-  let arrivalComplete = false;
 
-  function updateView(prompt = null, reward = false) {
-    onChange({ prompt, reward });
+  function updateView(prompt = null, reward = false, availableItems = []) {
+    onChange({ prompt, reward, availableItems });
   }
 
   async function play(index) {
@@ -35,50 +37,44 @@ export function createNarrativeController({
     await audio.playNarration(index, shepherd);
   }
 
-  async function runFirstLine() {
-    try {
-      await play(0);
-      stage = "approach";
-      updateView({ label: "Approcher le berger", action: "shepherd" });
-    } catch (error) {
-      console.error("Impossible de lire le premier dialogue.", error);
-      updateView({ label: "Réessayer le dialogue", action: "retry" });
-    }
-  }
-
-  function startFirstLine() {
-    if (started) return;
+  async function beginFromBag(controller = null) {
+    if ((started && stage !== "pickup-error") || busy) return false;
     started = true;
-    stage = "first-line";
-    revealShepherd(getShepherd());
-    void runFirstLine();
-  }
-
-  async function startAtCamp() {
-    if (started) return;
-    started = true;
-    stage = "arrival";
-    const shepherd = getShepherd();
-    revealShepherd(shepherd);
+    busy = true;
+    stage = "picking-up-bag";
+    updateView();
 
     try {
+      await pickupBag(getBag(), controller);
+      setBagOwned(true);
+      stage = "arrival";
+      const shepherd = getShepherd();
+      revealShepherd(shepherd);
       const arrival = animateArrival(shepherd);
       await Promise.all([arrival, play(0)]);
-      arrivalComplete = true;
       stage = "approach";
       updateView({ label: "Continuer le récit", action: "shepherd" });
+      return true;
     } catch (error) {
-      console.error("Impossible de lancer l’arrivée du berger.", error);
-      updateView({ label: "Reprendre le récit", action: "retry" });
+      console.error("Impossible de ramasser le sac ou de lancer le récit.", error);
+      stage = "pickup-error";
+      updateView({ label: "Réessayer", action: "retry" });
+      return false;
+    } finally {
+      busy = false;
     }
   }
 
   async function activateBag(controller = null) {
-    if (busy) return;
-    if (stage === "waiting-near-bag") {
-      void startAtCamp();
-      return;
-    }
+    if (stage !== "waiting-near-bag") return false;
+    return beginFromBag(controller);
+  }
+
+  async function selectInventoryItem(item) {
+    if (busy) return false;
+    if (stage === "map" && item !== "corsica-map") return false;
+    if (stage === "rope" && item !== "rope") return false;
+    if (stage !== "map" && stage !== "rope") return false;
 
     busy = true;
     updateView();
@@ -88,22 +84,19 @@ export function createNarrativeController({
         showMap();
         await play(2);
         stage = "rope";
-        updateView({ label: "Sortir la corde du sac", action: "bag" });
-      } else if (stage === "rope") {
+        updateView({ label: "Ouvrir l’inventaire et choisir la corde", action: "inventory" }, false, ["rope"]);
+      } else {
         stage = "rope-story";
         showRope();
         await play(3);
-        stage = "return-bag";
-        updateView({ label: "Prendre le sac", action: "bag" });
-      } else if (stage === "return-bag") {
-        stage = "picking-up-bag";
-        await pickupBag(getBag(), controller);
         stage = "return-to-shepherd";
-        updateView({ label: "Apporter le sac au berger", action: "shepherd" });
+        updateView({ label: "Rendre le sac au berger", action: "shepherd" });
       }
+      return true;
     } catch (error) {
       console.error("Impossible de poursuivre le récit.", error);
-      updateView({ label: "Réessayer", action: "retry" });
+      updateView({ label: "Reprendre le récit", action: "retry" });
+      return false;
     } finally {
       busy = false;
     }
@@ -115,16 +108,12 @@ export function createNarrativeController({
     updateView();
     try {
       if (stage === "approach") {
-        if (!arrivalComplete) {
-          stage = "arrival";
-          await animateArrival(getShepherd());
-          arrivalComplete = true;
-        }
         stage = "seated-story";
         await play(1);
         stage = "map";
-        updateView({ label: "Sortir la carte de Corse du sac", action: "bag" });
+        updateView({ label: "Ouvrir l’inventaire et choisir la carte", action: "inventory" }, false, ["corsica-map"]);
       } else if (stage === "return-to-shepherd") {
+        closeInventory();
         stage = "handoff";
         await animateHandoff(getBag(), getShepherd());
         showCollectible();
@@ -165,8 +154,13 @@ export function createNarrativeController({
 
   function activatePrompt() {
     if (stage === "approach" || stage === "return-to-shepherd") return activateShepherd();
+    if (stage === "map" || stage === "rope") {
+      openInventory();
+      return;
+    }
     if (stage === "reward") return activateCollectible();
-    return activateBag();
+    if (stage === "waiting-near-bag") return beginFromBag();
+    if (stage === "pickup-error") return beginFromBag();
   }
 
   return {
@@ -174,10 +168,10 @@ export function createNarrativeController({
       loadingPromise = audio.loadNarration(NARRATION_FILES, ".");
       await loadingPromise;
     },
-    startAtCamp,
     activateBag,
+    activateShepherd,
     activateCollectible,
     activatePrompt,
-    activateShepherd,
+    selectInventoryItem,
   };
 }

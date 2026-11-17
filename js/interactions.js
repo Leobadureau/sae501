@@ -15,6 +15,7 @@ export function createInteractionSystem({
   convertMaterials,
   isModelAction = () => false,
   onModelActivate = () => {},
+  onInventoryToggle = () => {},
 }) {
   const raycaster = new THREE.Raycaster();
   raycaster.far = 10;
@@ -205,6 +206,10 @@ export function createInteractionSystem({
       interactionController.connected = false;
       ray.visible = false;
       interactionController.grabbed = null;
+    });
+    controller.addEventListener("squeezestart", () => {
+      unlockAudio();
+      onInventoryToggle(controller);
     });
     controller.addEventListener("select", () => {
       const hit = findControllerHit(controller);

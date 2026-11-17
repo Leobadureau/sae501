@@ -6,8 +6,9 @@ import { SplatMesh, SparkControls, SparkXr, utils } from "@sparkjsdev/spark";
 import { addModelGlow, convertToBasicMaterials, waitForModelTextures } from "./model-materials.js";
 import { createMarkerDetection } from "./marker-detection.js?v=lower-scan-latency-20261116";
 import { createAudioSystem } from "./audio.js";
-import { createInteractionSystem } from "./interactions.js";
-import { createNarrativeController } from "./narrative.js";
+import { createInteractionSystem } from "./interactions.js?v=inventory-system-20261117";
+import { createNarrativeController } from "./narrative.js?v=inventory-system-20261117";
+import { createInventorySystem } from "./inventory.js?v=inventory-system-20261117";
 import {
   SPAWN_POSITION,
   PC_CAMERA_HEIGHT_OFFSET,
@@ -37,6 +38,7 @@ const pcModeButton = document.getElementById("pc-mode");
 const arModeButton = document.getElementById("ar-mode");
 const musicToggle = document.getElementById("music-toggle");
 const audio = createAudioSystem({ THREE, audioListener, scene, renderer, musicToggle });
+let inventory = null;
 const markerTracker = createMarkerDetection({
   markerOverlay,
   renderer,
@@ -79,6 +81,7 @@ function enterPcMode(event) {
   renderer.setClearAlpha(1);
   if (loadingOverlay) loadingOverlay.hidden = false;
   setWorldVisible(true);
+  inventory?.setPcActive(true);
   if (modeOverlay) modeOverlay.hidden = true;
 }
 
@@ -811,22 +814,18 @@ function animateBagHandoff(bag, shepherd) {
 
 function pickUpNarrativeBag(bag, controller = null) {
   if (!bag) return Promise.resolve();
-  const holder = controller ?? camera;
+  const holder = camera;
   holder.updateWorldMatrix(true, true);
-  const localHoldPosition = controller
-    ? new THREE.Vector3(0.04, -0.03, -0.22)
-    : new THREE.Vector3(0.28, -0.24, -0.58);
+  const localHoldPosition = new THREE.Vector3(0.28, -0.24, -0.58);
   const targetPosition = localHoldPosition.applyMatrix4(holder.matrixWorld);
   scene.attach(bag);
   bag.visible = true;
   return animateObjectTo(bag, targetPosition, 0.55, () => {
     holder.attach(bag);
-    bag.position.copy(localHoldPosition.set(
-      controller ? 0.04 : 0.28,
-      controller ? -0.03 : -0.24,
-      controller ? -0.22 : -0.58
-    ));
+    bag.position.copy(localHoldPosition);
     bag.quaternion.identity();
+    bag.scale.setScalar(0.08);
+    bag.visible = false;
     interactionSystem?.updateHighlights();
   });
 }
@@ -1033,15 +1032,18 @@ interactionSystem = createInteractionSystem({
   unlockAudio: audio.unlockSpatialAudio,
   revealModel: () => {},
   convertMaterials: convertToBasicMaterials,
-  isModelAction: (model) => model === loadedModels.get("assets/models/Sacoche1-optimized.glb")
+  isModelAction: (model) => inventory?.isAction(model)
+    || model === loadedModels.get("assets/models/Sacoche1-optimized.glb")
     || model === loadedModels.get("assets/models/old man 3d model/tripo_convert_ad709b62-a73c-451d-b686-15168f7a6180.fbx")
     || model === collectibleModel,
   onModelActivate: (model, controller = null) => {
     audio.unlockSpatialAudio();
-    if (model === collectibleModel) narrative.activateCollectible();
+    if (inventory?.isAction(model)) inventory.select(model.userData.inventoryAction);
+    else if (model === collectibleModel) narrative.activateCollectible();
     else if (model === loadedModels.get("assets/models/Sacoche1-optimized.glb")) narrative.activateBag(controller);
     else narrative.activateShepherd();
   },
+  onInventoryToggle: () => inventory?.toggle(),
 });
 
 const narrativePrompt = document.getElementById("narrative-prompt");
@@ -1052,7 +1054,7 @@ const narrative = createNarrativeController({
   audio,
   getShepherd: () => loadedModels.get("assets/models/old man 3d model/tripo_convert_ad709b62-a73c-451d-b686-15168f7a6180.fbx"),
   getBag: () => loadedModels.get("assets/models/Sacoche1-optimized.glb"),
-  onChange: ({ prompt, reward }) => {
+  onChange: ({ prompt, reward, availableItems }) => {
     if (narrativePrompt) narrativePrompt.hidden = !prompt;
     if (prompt && narrativeText && narrativeAction) {
       narrativeText.textContent = prompt.label;
@@ -1060,6 +1062,7 @@ const narrative = createNarrativeController({
       narrativeAction.dataset.action = prompt.action;
     }
     if (collectibleCard && reward) collectibleCard.hidden = false;
+    inventory?.setAvailableItems(availableItems);
     const claim = document.getElementById("collectible-claim");
     if (claim) claim.hidden = prompt?.action !== "collectible";
   },
@@ -1083,13 +1086,34 @@ const narrative = createNarrativeController({
     return Promise.resolve();
   },
   pickupBag: pickUpNarrativeBag,
+  setBagOwned: (owned) => inventory?.setBagOwned(owned),
   animateHandoff: animateBagHandoff,
   animateDeparture: playShepherdDeparture,
   showMap: showCorsicaMap,
   showRope,
   showCollectible: showCollectibleCard,
   collectReward: collectNarrativeReward,
+  openInventory: () => inventory?.open(),
+  closeInventory: () => inventory?.close(),
 });
+
+const inventoryButtons = new Map(
+  [...document.querySelectorAll("[data-inventory-item]")]
+    .map((button) => [button.dataset.inventoryItem, button])
+);
+inventory = createInventorySystem({
+  THREE,
+  camera,
+  renderer,
+  panel: document.getElementById("inventory-panel"),
+  toggleButton: document.getElementById("inventory-toggle"),
+  closeButton: document.getElementById("inventory-close"),
+  bagStatus: document.getElementById("inventory-bag-status"),
+  itemButtons: inventoryButtons,
+  onSelectItem: (item) => narrative.selectInventoryItem(item),
+});
+interactiveModels.push(...inventory.getInteractiveModels());
+inventory.setPcActive(markerDetection.pcMode);
 narrative.load().catch((error) => {
   console.error("Impossible de charger les audios de narration.", error);
   if (narrativePrompt && narrativeText) {
