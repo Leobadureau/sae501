@@ -894,11 +894,19 @@ async function loadMesh(mesh) {
 
       scene.add(highlight);
 
+      const bounds = new THREE.Box3().setFromObject(model)
+        .applyMatrix4(model.matrixWorld.clone().invert());
+      if (mesh.filename.includes("old man 3d model")) {
+        bounds.union(new THREE.Box3(
+          new THREE.Vector3(-0.8, 0, -0.7),
+          new THREE.Vector3(0.8, 2.2, 0.7)
+        ));
+      }
+
       interactiveModels.push({
         model,
         highlight,
-        bounds: new THREE.Box3().setFromObject(model)
-          .applyMatrix4(model.matrixWorld.clone().invert()),
+        bounds,
       });
     }
     if (mesh.glow) addModelGlow(model);

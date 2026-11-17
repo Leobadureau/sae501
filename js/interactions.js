@@ -33,6 +33,23 @@ export function createInteractionSystem({
   let lastHoverUpdate = -Infinity;
 
   function findInteractiveHitAtRay() {
+    let closestMeshHit = null;
+    let closestMeshDistance = raycaster.far;
+
+    for (const { model } of interactiveModels) {
+      if (!model.visible || !isModelAction(model)) continue;
+      model.updateWorldMatrix(true, true);
+      const intersections = raycaster.intersectObject(model, true);
+      const hit = intersections.find((intersection) =>
+        intersection.distance >= raycaster.near
+        && intersection.distance <= closestMeshDistance
+      );
+      if (!hit) continue;
+      closestMeshDistance = hit.distance;
+      closestMeshHit = { model, point: hit.point.clone() };
+    }
+    if (closestMeshHit) return closestMeshHit;
+
     let closestHit = null;
     let closestDistance = raycaster.far;
 
