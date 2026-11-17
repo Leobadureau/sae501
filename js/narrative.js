@@ -3,7 +3,7 @@ const NARRATION_FILES = Array.from(
   (_, index) => `Narration%20FR/FR_${index + 1}.mp3`
 );
 
-export function createNarrativeController({ audio, getShepherd, getBag, onChange, animateArrival, animateDeparture }) {
+export function createNarrativeController({ audio, getShepherd, getBag, onChange, revealShepherd, animateArrival, animateDeparture }) {
   let started = false;
   let busy = false;
   let stage = "waiting-near-bag";
@@ -45,6 +45,7 @@ export function createNarrativeController({ audio, getShepherd, getBag, onChange
     if (started) return;
     started = true;
     stage = "first-line";
+    revealShepherd(getShepherd());
     void runSequence();
   }
 

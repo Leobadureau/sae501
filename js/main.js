@@ -655,9 +655,15 @@ const narrative = createNarrativeController({
     }
     if (collectibleCard && reward) collectibleCard.hidden = false;
   },
+  revealShepherd: (model) => {
+    if (!model || model.visible) return;
+    model.visible = true;
+    playRevealFlash();
+    renderEnabled = true;
+    lastMoved = performance.now();
+  },
   animateArrival: (model) => {
     if (model) {
-      playRevealFlash();
       enterSeatedView();
       return playShepherdAnimation(model);
     }
