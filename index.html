@@ -89,30 +89,30 @@
         Entrer en AR
       </button>
 
-      <button id="inventory-toggle" class="inventory-toggle" type="button" aria-expanded="false" aria-controls="inventory-panel" hidden>
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7.5h16l1 13H3l1-13Z"/><path d="M8 8V6a4 4 0 0 1 8 0v2"/><path d="M8 12v1m8-1v1"/></svg>
-        <span>Inventaire</span><kbd>I</kbd>
+      <button id="inventory-toggle" class="inventory-toggle" type="button" aria-label="Ouvrir l’inventaire" aria-expanded="false" aria-controls="inventory-panel" hidden>
+        <svg viewBox="0 0 64 64" aria-hidden="true">
+          <circle cx="32" cy="32" r="29"/>
+        </svg>
+        <img src="./assets/images/Inventaire.png" alt="" aria-hidden="true"/><kbd class="visually-hidden">I</kbd>
       </button>
 
       <section id="inventory-panel" class="inventory-panel" aria-label="Inventaire" hidden>
-        <header class="inventory-header">
-          <div><span class="narrative-kicker">ALDILÀ · OBJETS</span><h2>Inventaire</h2></div>
-          <button id="inventory-close" class="inventory-close" type="button" aria-label="Fermer l’inventaire">×</button>
+        <header class="visually-hidden">
+          <h2>Inventaire</h2><button id="inventory-close" type="button">Fermer</button>
         </header>
-        <p id="inventory-bag-status" class="inventory-bag-status">Sacoche · au sol</p>
+        <p id="inventory-bag-status" class="visually-hidden">Sacoche · au sol</p>
         <div class="inventory-items" role="group" aria-label="Objets disponibles">
           <button class="inventory-item" type="button" data-inventory-item="corsica-map" aria-disabled="true" disabled>
-            <span class="inventory-item-icon inventory-map-icon" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M18 3 25 7l-2 5 3 4-4 4-1 6-5 3-2-5-4-3 2-6-2-4 3-5Z"/><path d="m13 11 4 2-2 4 3 3"/></svg></span>
-            <span><strong>Carte de Corse</strong><small>La mémoire de l’île</small></span>
-            <span class="inventory-lock" aria-hidden="true">·</span>
+            <span class="inventory-art"><img src="./assets/images/inventory-map.svg" alt=""/><span class="inventory-orbit"></span><span class="inventory-diamond"></span></span>
+            <span class="inventory-label">Carte de Corse</span>
+            <span class="inventory-rule" aria-hidden="true"></span>
           </button>
           <button class="inventory-item" type="button" data-inventory-item="rope" aria-disabled="true" disabled>
-            <span class="inventory-item-icon inventory-rope-icon" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M23 10c-2-4-8-6-12-3s-5 9-2 13 9 5 13 2 4-8 1-10-7-1-8 2 1 5 4 4"/><path d="m9 23-3 4m17-4 4 3"/></svg></span>
-            <span><strong>Corde</strong><small>Une corde tressée</small></span>
-            <span class="inventory-lock" aria-hidden="true">·</span>
+            <span class="inventory-art"><img src="./assets/images/inventory-rope.svg" alt=""/><span class="inventory-orbit"></span><span class="inventory-diamond"></span></span>
+            <span class="inventory-label">Corde</span>
+            <span class="inventory-rule" aria-hidden="true"></span>
           </button>
         </div>
-        <p class="inventory-hint">Choisis l’objet demandé par le berger.</p>
       </section>
 
       <!-- INFORMATIONS XR -->
@@ -145,7 +145,7 @@
 
     </div>
 
-    <script type="module" src="./js/main.js?v=shepherd-walk-on-reveal-20261117"></script>
+    <script type="module" src="./js/main.js?v=cinematic-inventory-20261117"></script>
     <script type="module" src="./js/home.js?v=code-structure-20261116"></script>
 
   </body>

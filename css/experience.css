@@ -8,8 +8,7 @@
 }
 
 .narrative-prompt,
-.collectible-card,
-.inventory-panel {
+.collectible-card {
   position: fixed;
   z-index: 20;
   pointer-events: auto;
@@ -81,164 +80,203 @@
 
 .inventory-toggle {
   position: fixed;
-  z-index: 21;
-  top: max(16px, env(safe-area-inset-top));
-  right: max(18px, env(safe-area-inset-right));
-  display: inline-flex;
-  align-items: center;
-  gap: 9px;
-  min-height: 42px;
-  padding: 0 13px;
-  border: 1px solid rgba(224, 211, 190, 0.45);
+  z-index: 24;
+  right: max(4.5vw, env(safe-area-inset-right));
+  bottom: max(5vh, env(safe-area-inset-bottom));
+  display: grid;
+  width: clamp(58px, 6vw, 88px);
+  aspect-ratio: 1;
+  padding: 0;
+  place-items: center;
+  border: 0;
   color: #eee5d8;
-  background: rgba(17, 17, 16, 0.8);
-  font: 12px Georgia, serif;
-  letter-spacing: 0.1em;
+  background: transparent;
   cursor: pointer;
   pointer-events: auto;
-  backdrop-filter: blur(10px);
+  transition: transform 350ms ease, filter 350ms ease;
 }
 
 .inventory-toggle:hover,
 .inventory-toggle:focus-visible,
 .inventory-toggle[aria-expanded="true"] {
-  color: #201d19;
-  background: #e8dccb;
+  color: #fffaf0;
+  transform: scale(1.07);
+  filter: drop-shadow(0 0 12px rgba(238, 229, 216, 0.4));
 }
 
 .inventory-toggle svg {
-  width: 19px;
-  height: 19px;
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
   fill: none;
   stroke: currentColor;
   stroke-linecap: round;
   stroke-linejoin: round;
-  stroke-width: 1.45;
+  stroke-width: 1.1;
+  filter: drop-shadow(0 2px 7px rgba(0, 0, 0, 0.8));
 }
 
-.inventory-toggle kbd {
-  padding: 2px 5px;
-  border: 1px solid currentColor;
-  font: 10px monospace;
-  opacity: 0.72;
+.inventory-toggle img {
+  position: absolute;
+  z-index: 1;
+  width: 38%;
+  height: 38%;
+  object-fit: contain;
+  filter: invert(1) drop-shadow(0 1px 4px rgba(0, 0, 0, 0.8));
+  pointer-events: none;
 }
 
 .inventory-panel {
-  z-index: 22;
-  top: max(68px, calc(env(safe-area-inset-top) + 58px));
-  right: max(18px, env(safe-area-inset-right));
-  width: min(350px, calc(100vw - 36px));
-  padding: 18px;
+  position: fixed;
+  z-index: 23;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  padding: clamp(20px, 5vw, 72px);
+  border: 0;
+  color: #eee8df;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
   pointer-events: auto;
 }
 
-.inventory-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
+body.inventory-open canvas {
+  filter: grayscale(1) brightness(0.54) contrast(1.08);
+  transition: filter 650ms ease;
 }
 
-.inventory-header h2 {
-  margin: 6px 0 0;
-  color: #eee5d8;
-  font: 25px Georgia, serif;
-  font-weight: 400;
-  letter-spacing: 0.06em;
-}
-
-.inventory-close {
-  width: 30px;
-  height: 30px;
-  border: 1px solid rgba(224, 211, 190, 0.35);
-  color: #eee5d8;
-  background: transparent;
-  font: 22px/1 Georgia, serif;
-  cursor: pointer;
-}
-
-.inventory-bag-status,
-.inventory-hint {
-  margin: 14px 0;
-  color: rgba(230, 218, 199, 0.65);
-  font: 11px Georgia, serif;
-  letter-spacing: 0.08em;
+body.inventory-open::after {
+  position: fixed;
+  z-index: 4;
+  inset: 0;
+  background: rgba(5, 5, 5, 0.28);
+  content: "";
+  pointer-events: none;
 }
 
 .inventory-items {
   display: grid;
-  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: center;
+  gap: clamp(20px, 6vw, 100px);
+  width: min(930px, 78vw);
+  margin: 0 auto;
 }
 
 .inventory-item {
   display: grid;
-  grid-template-columns: 42px 1fr 18px;
-  align-items: center;
-  gap: 11px;
-  width: 100%;
-  min-height: 66px;
-  padding: 8px 10px;
-  border: 1px solid rgba(224, 211, 190, 0.42);
-  color: #eee5d8;
-  background: rgba(232, 220, 202, 0.06);
-  text-align: left;
+  justify-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  color: #eee8df;
+  background: transparent;
   cursor: pointer;
-}
-
-.inventory-item.is-available:hover,
-.inventory-item.is-available:focus-visible {
-  color: #201d19;
-  background: #e8dccb;
+  transition: opacity 350ms ease, transform 350ms ease, color 350ms ease;
 }
 
 .inventory-item:disabled {
   cursor: default;
-  opacity: 0.46;
+  opacity: 0.54;
 }
 
-.inventory-item > span:nth-child(2) {
+.inventory-item.is-available:hover,
+.inventory-item.is-available:focus-visible {
+  color: #fffaf0;
+  transform: translateY(-5px);
+}
+
+.inventory-art {
+  position: relative;
   display: grid;
-  gap: 4px;
-}
-
-.inventory-item strong {
-  font: 15px Georgia, serif;
-  font-weight: 400;
-  letter-spacing: 0.035em;
-}
-
-.inventory-item small {
-  font: 10px Georgia, serif;
-  letter-spacing: 0.04em;
-  opacity: 0.67;
-}
-
-.inventory-item-icon {
-  display: grid;
-  width: 38px;
-  height: 38px;
+  width: clamp(190px, 25vw, 365px);
+  height: clamp(175px, 29vh, 300px);
   place-items: center;
-  border: 1px solid currentColor;
 }
 
-.inventory-item-icon svg {
-  width: 25px;
-  height: 25px;
-  fill: none;
-  stroke: currentColor;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-width: 1.25;
+.inventory-art img {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 86%;
+  height: 84%;
+  object-fit: contain;
+  filter: grayscale(0.82) contrast(1.08) drop-shadow(0 12px 15px rgba(0, 0, 0, 0.58));
 }
 
-.inventory-lock {
-  font: 24px Georgia, serif;
-  text-align: center;
-  opacity: 0.5;
+.inventory-orbit {
+  position: absolute;
+  width: 94%;
+  aspect-ratio: 1;
+  max-height: 100%;
+  border: 1px solid rgba(239, 232, 222, 0.35);
+  border-right-color: transparent;
+  border-radius: 50%;
+  transform: rotate(-28deg) scaleY(0.88);
 }
 
-.inventory-hint {
-  margin-bottom: 0;
-  text-align: center;
+.inventory-art::after {
+  position: absolute;
+  width: 84%;
+  aspect-ratio: 1;
+  max-height: 88%;
+  border: 1px solid rgba(239, 232, 222, 0.16);
+  border-radius: 50%;
+  content: "";
+  transform: scaleY(0.88);
+}
+
+.inventory-diamond {
+  position: absolute;
+  z-index: 2;
+  top: 2%;
+  left: 50%;
+  width: 10px;
+  height: 10px;
+  border: 1px solid rgba(245, 239, 230, 0.95);
+  background: #141311;
+  transform: translateX(-50%) rotate(45deg);
+}
+
+.inventory-label {
+  margin-top: 2px;
+  font: italic clamp(21px, 2.1vw, 34px) Georgia, "Times New Roman", serif;
+  letter-spacing: 0.015em;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8);
+}
+
+.inventory-rule {
+  position: relative;
+  display: block;
+  width: min(220px, 72%);
+  height: 1px;
+  margin-top: 7px;
+  background: linear-gradient(90deg, transparent, rgba(239, 232, 222, 0.8) 22%, rgba(239, 232, 222, 0.8) 78%, transparent);
+}
+
+.inventory-rule::after {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 9px;
+  height: 9px;
+  border: 1px solid #eee8df;
+  background: #151412;
+  content: "";
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+
+@media (max-width: 680px) {
+  .inventory-items { width: 96vw; gap: 8px; }
+  .inventory-art { width: clamp(145px, 43vw, 220px); height: 25vh; }
+  .inventory-label { font-size: clamp(18px, 4.2vw, 25px); }
+  .inventory-toggle { right: 18px; bottom: 22px; width: 60px; }
 }
 
 .collectible-card img {

@@ -1,3 +1,15 @@
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+
+const ITEM_ART = {
+  "corsica-map": "./assets/images/inventory-map.svg",
+  rope: "./assets/images/inventory-rope.svg",
+};
+
+const ITEM_MODELS = {
+  "corsica-map": "./assets/models/Carte.glb",
+  rope: "./assets/models/Corde.glb",
+};
+
 export function createInventorySystem({
   THREE,
   camera,
@@ -10,6 +22,9 @@ export function createInventorySystem({
   onSelectItem = () => false,
 }) {
   const availableItems = new Set();
+  const textureLoader = new THREE.TextureLoader();
+  const gltfLoader = new GLTFLoader();
+  const itemArtTextures = new Map();
   let bagOwned = false;
   let opened = false;
   let pcActive = false;
@@ -17,171 +32,185 @@ export function createInventorySystem({
   const vrPanel = new THREE.Group();
   vrPanel.name = "aldila-vr-inventory";
   vrPanel.visible = false;
-  vrPanel.position.set(0, 0, -1.05);
+  vrPanel.position.set(0, 0, -1.2);
+  vrPanel.scale.setScalar(1.2);
   camera.add(vrPanel);
 
   const interactiveModels = [];
   const buttonViews = new Map();
 
-  function makeLabel(text, width = 512, height = 128, small = false) {
+  function makeLabel(text) {
     const canvas = document.createElement("canvas");
-    canvas.width = width;
-    canvas.height = height;
+    canvas.width = 640;
+    canvas.height = 128;
     const context = canvas.getContext("2d");
-    context.clearRect(0, 0, width, height);
-    context.fillStyle = "#eee5d8";
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    context.fillStyle = "#eee8df";
     context.textAlign = "center";
     context.textBaseline = "middle";
-    context.font = `${small ? "26px" : "36px"} Georgia, serif`;
-    context.letterSpacing = "5px";
-    context.fillText(text, width / 2, height / 2, width - 32);
+    context.font = "italic 52px Georgia, serif";
+    context.fillText(text, canvas.width / 2, canvas.height / 2, canvas.width - 20);
     const texture = new THREE.CanvasTexture(canvas);
     texture.colorSpace = THREE.SRGBColorSpace;
     return texture;
   }
 
-  function makeButton(key, label, y) {
+  function getArtTexture(key) {
+    if (!itemArtTextures.has(key)) {
+      const texture = textureLoader.load(ITEM_ART[key]);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      itemArtTextures.set(key, texture);
+    }
+    return itemArtTextures.get(key);
+  }
+
+  function makeButton(key, label, x) {
     const button = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.78, 0.2),
+      new THREE.PlaneGeometry(0.76, 1.06),
       new THREE.MeshBasicMaterial({
-        color: 0x292622,
+        color: 0xffffff,
         transparent: true,
-        opacity: 0.96,
+        opacity: 0,
         side: THREE.DoubleSide,
         depthTest: false,
         depthWrite: false,
       })
     );
-    button.position.set(0, y, 0.004);
-    button.renderOrder = 1001;
+    button.position.set(x, -0.02, 0.02);
     button.userData.inventoryAction = key;
+    button.renderOrder = 1001;
 
-    const border = new THREE.LineSegments(
-      new THREE.EdgesGeometry(new THREE.PlaneGeometry(0.78, 0.2)),
-      new THREE.LineBasicMaterial({ color: 0xc8bba8, transparent: true, opacity: 0.7, depthTest: false })
-    );
-    border.position.z = 0.006;
-    border.renderOrder = 1002;
-    const text = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.54, 0.16),
+    const artMaterial = new THREE.MeshBasicMaterial({
+      map: getArtTexture(key),
+      transparent: true,
+      opacity: 0.55,
+      side: THREE.DoubleSide,
+      depthTest: false,
+      depthWrite: false,
+    });
+    const art = new THREE.Mesh(new THREE.PlaneGeometry(0.58, 0.42), artMaterial);
+    art.position.set(x, 0.13, 0.03);
+    art.renderOrder = 1002;
+    vrPanel.add(art);
+
+    const ringMaterial = new THREE.MeshBasicMaterial({
+      color: 0xe5ddd1,
+      transparent: true,
+      opacity: 0.42,
+      side: THREE.DoubleSide,
+      depthTest: false,
+    });
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.34, 0.0017, 4, 96), ringMaterial);
+    ring.position.set(x, 0.13, 0.035);
+    ring.scale.y = 0.78;
+    ring.renderOrder = 1003;
+    vrPanel.add(ring);
+
+    const labelMesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.7, 0.14),
       new THREE.MeshBasicMaterial({
         map: makeLabel(label),
         transparent: true,
+        opacity: 0.68,
         side: THREE.DoubleSide,
         depthTest: false,
         depthWrite: false,
       })
     );
-    text.position.set(0.11, 0, 0.008);
-    text.renderOrder = 1003;
-    const iconMaterial = new THREE.MeshBasicMaterial({ color: 0xeee5d8, side: THREE.DoubleSide, depthTest: false });
-    if (key === "corsica-map") {
-      const shape = new THREE.Shape();
-      shape.moveTo(0.012, 0.068);
-      shape.quadraticCurveTo(0.048, 0.053, 0.037, 0.027);
-      shape.lineTo(0.052, 0.006);
-      shape.lineTo(0.028, -0.014);
-      shape.lineTo(0.02, -0.052);
-      shape.lineTo(-0.012, -0.071);
-      shape.lineTo(-0.024, -0.038);
-      shape.lineTo(-0.045, -0.018);
-      shape.lineTo(-0.029, 0.014);
-      shape.lineTo(-0.037, 0.037);
-      shape.lineTo(-0.012, 0.057);
-      shape.closePath();
-      const island = new THREE.Mesh(new THREE.ShapeGeometry(shape), iconMaterial);
-      island.position.set(-0.27, 0, 0.012);
-      island.renderOrder = 1004;
-      button.add(island);
-    } else {
-      for (let index = 0; index < 3; index += 1) {
-        const loop = new THREE.Mesh(new THREE.TorusGeometry(0.034, 0.006, 6, 20), iconMaterial);
-        loop.position.set(-0.29 + index * 0.024, 0, 0.012 + index * 0.001);
-        loop.rotation.z = index * 0.12;
-        loop.renderOrder = 1004 + index;
-        button.add(loop);
-      }
-    }
-    button.add(border, text);
+    labelMesh.position.set(x, -0.4, 0.035);
+    labelMesh.renderOrder = 1003;
+    vrPanel.add(labelMesh);
+
+    const ruleMaterial = new THREE.LineBasicMaterial({
+      color: 0xe5ddd1,
+      transparent: true,
+      opacity: 0.48,
+      depthTest: false,
+    });
+    const rule = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(x - 0.31, -0.51, 0.035),
+        new THREE.Vector3(x - 0.04, -0.51, 0.035),
+        new THREE.Vector3(x + 0.04, -0.51, 0.035),
+        new THREE.Vector3(x + 0.31, -0.51, 0.035),
+      ]),
+      ruleMaterial
+    );
+    rule.renderOrder = 1003;
+    vrPanel.add(rule);
+
+    const diamond = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.025, 0.025),
+      new THREE.MeshBasicMaterial({ color: 0xe5ddd1, side: THREE.DoubleSide, depthTest: false })
+    );
+    diamond.position.set(x, -0.51, 0.038);
+    diamond.rotation.z = Math.PI / 4;
+    diamond.renderOrder = 1004;
+    vrPanel.add(diamond);
+
     vrPanel.add(button);
-    buttonViews.set(key, { button, border, text, iconMaterial });
+    button.visible = false;
+    buttonViews.set(key, { button, art, artMaterial, ringMaterial, labelMaterial: labelMesh.material, ruleMaterial });
     interactiveModels.push({
       model: button,
       highlight: new THREE.Object3D(),
       bounds: new THREE.Box3(
-        new THREE.Vector3(-0.39, -0.1, -0.002),
-        new THREE.Vector3(0.39, 0.1, 0.012)
+        new THREE.Vector3(-0.38, -0.53, -0.01),
+        new THREE.Vector3(0.38, 0.53, 0.01)
       ),
     });
   }
 
-  const backing = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.94, 0.78),
-    new THREE.MeshBasicMaterial({
-      color: 0x11100f,
-      transparent: true,
-      opacity: 0.96,
-      side: THREE.DoubleSide,
-      depthTest: false,
-      depthWrite: false,
-    })
-  );
-  backing.renderOrder = 1000;
-  vrPanel.add(backing);
+  makeButton("corsica-map", "Carte de Corse", -0.47);
+  makeButton("rope", "Corde", 0.47);
 
-  const title = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.74, 0.11),
-    new THREE.MeshBasicMaterial({
-      map: makeLabel("INVENTAIRE", 512, 128, true),
-      transparent: true,
-      side: THREE.DoubleSide,
-      depthTest: false,
-      depthWrite: false,
-    })
-  );
-  title.position.set(0, 0.27, 0.003);
-  title.renderOrder = 1001;
-  vrPanel.add(title);
+  async function loadVrPreview(key, x) {
+    try {
+      const loaded = await gltfLoader.loadAsync(ITEM_MODELS[key]);
+      const model = loaded.scene;
+      model.updateMatrixWorld(true);
+      const bounds = new THREE.Box3().setFromObject(model);
+      const center = bounds.getCenter(new THREE.Vector3());
+      const size = bounds.getSize(new THREE.Vector3());
+      const scale = 0.56 / Math.max(size.x, size.y, size.z, 0.001);
+      model.scale.setScalar(scale);
+      model.position.set(-center.x * scale, -center.y * scale, -center.z * scale);
+      model.position.add(new THREE.Vector3(x, 0.13, 0.065));
+      model.traverse((child) => {
+        if (!child.isMesh) return;
+        child.material = Array.isArray(child.material)
+          ? child.material.map((material) => material.clone())
+          : child.material.clone();
+        child.renderOrder = 1004;
+      });
+      vrPanel.add(model);
+      const view = buttonViews.get(key);
+      if (view) view.art.visible = false;
+    } catch (error) {
+      console.warn(`Aperçu VR indisponible pour ${key}.`, error);
+    }
+  }
 
-  const vrHint = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.62, 0.07),
-    new THREE.MeshBasicMaterial({
-      map: makeLabel("GRIP · FERMER", 512, 128, true),
-      transparent: true,
-      side: THREE.DoubleSide,
-      depthTest: false,
-      depthWrite: false,
-    })
-  );
-  vrHint.position.set(0, -0.32, 0.003);
-  vrHint.renderOrder = 1001;
-  vrPanel.add(vrHint);
+  void Promise.all([
+    loadVrPreview("corsica-map", -0.47),
+    loadVrPreview("rope", 0.47),
+  ]);
 
-  const closeButtonMesh = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.14, 0.14),
-    new THREE.MeshBasicMaterial({
-      map: makeLabel("×", 128, 128),
-      transparent: true,
-      side: THREE.DoubleSide,
-      depthTest: false,
-      depthWrite: false,
-    })
-  );
-  closeButtonMesh.position.set(0.38, 0.3, 0.006);
-  closeButtonMesh.renderOrder = 1002;
-  closeButtonMesh.userData.inventoryAction = "close";
-  vrPanel.add(closeButtonMesh);
-  interactiveModels.push({
-    model: closeButtonMesh,
-    highlight: new THREE.Object3D(),
-    bounds: new THREE.Box3(new THREE.Vector3(-0.07, -0.07, -0.002), new THREE.Vector3(0.07, 0.07, 0.01)),
-  });
-
-  makeButton("corsica-map", "CARTE DE CORSE", 0.08);
-  makeButton("rope", "CORDE", -0.17);
+  function syncView() {
+    const xrActive = renderer.xr.isPresenting;
+    vrPanel.visible = opened && bagOwned && xrActive;
+    for (const { button } of buttonViews.values()) button.visible = vrPanel.visible;
+    if (panel) panel.hidden = !opened || !bagOwned || xrActive;
+    if (toggleButton) {
+      toggleButton.hidden = xrActive || !pcActive || !bagOwned;
+      toggleButton.setAttribute("aria-expanded", String(opened));
+      toggleButton.setAttribute("aria-label", opened ? "Fermer l’inventaire" : "Ouvrir l’inventaire");
+    }
+    document.body.classList.toggle("inventory-open", opened && bagOwned && !xrActive);
+  }
 
   function refresh() {
-    if (bagStatus) bagStatus.textContent = bagOwned ? "Sacoche · portée" : "Sacoche · au sol";
+    if (bagStatus) bagStatus.textContent = bagOwned ? "Sacoche portée" : "Sacoche au sol";
     for (const [key, button] of itemButtons) {
       const usable = availableItems.has(key);
       button.disabled = !usable;
@@ -190,24 +219,13 @@ export function createInventorySystem({
     }
     for (const [key, view] of buttonViews) {
       const usable = availableItems.has(key);
-      view.button.material.color.setHex(usable ? 0x292622 : 0x171615);
-      view.button.material.opacity = usable ? 0.98 : 0.66;
-      view.border.material.color.setHex(usable ? 0xc8bba8 : 0x77736d);
-      view.border.material.opacity = usable ? 0.82 : 0.35;
-      view.text.material.opacity = usable ? 1 : 0.45;
-      view.iconMaterial.color.setHex(usable ? 0xeee5d8 : 0x7e7a74);
+      const opacity = usable ? 1 : 0.58;
+      view.artMaterial.opacity = opacity;
+      view.ringMaterial.opacity = usable ? 0.78 : 0.38;
+      view.labelMaterial.opacity = usable ? 1 : 0.62;
+      view.ruleMaterial.opacity = usable ? 0.78 : 0.4;
     }
     syncView();
-  }
-
-  function syncView() {
-    const xrActive = renderer.xr.isPresenting;
-    vrPanel.visible = opened && xrActive;
-    for (const { button } of buttonViews.values()) button.visible = vrPanel.visible;
-    closeButtonMesh.visible = vrPanel.visible;
-    if (panel) panel.hidden = !opened || xrActive;
-    if (toggleButton) toggleButton.hidden = xrActive || !pcActive || !bagOwned;
-    if (toggleButton) toggleButton.setAttribute("aria-expanded", String(opened));
   }
 
   function open() {
@@ -227,10 +245,6 @@ export function createInventorySystem({
   }
 
   function select(key) {
-    if (key === "close") {
-      close();
-      return true;
-    }
     if (!availableItems.has(key)) return false;
     const accepted = onSelectItem(key);
     if (accepted === false) return false;
@@ -239,9 +253,7 @@ export function createInventorySystem({
     return true;
   }
 
-  for (const [key, button] of itemButtons) {
-    button.addEventListener("click", () => select(key));
-  }
+  for (const [key, button] of itemButtons) button.addEventListener("click", () => select(key));
   toggleButton?.addEventListener("click", toggle);
   closeButton?.addEventListener("click", close);
   document.addEventListener("keydown", (event) => {
@@ -253,7 +265,6 @@ export function createInventorySystem({
   });
 
   refresh();
-  syncView();
   renderer.xr.addEventListener("sessionstart", syncView);
   renderer.xr.addEventListener("sessionend", syncView);
 
