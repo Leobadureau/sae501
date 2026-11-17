@@ -22,6 +22,7 @@ export function createNarrativeController({
   let busy = false;
   let stage = "waiting-near-bag";
   let loadingPromise = Promise.resolve();
+  let arrivalComplete = false;
 
   function updateView(prompt = null, reward = false) {
     onChange({ prompt, reward });
@@ -51,6 +52,25 @@ export function createNarrativeController({
     stage = "first-line";
     revealShepherd(getShepherd());
     void runFirstLine();
+  }
+
+  async function startAtCamp() {
+    if (started) return;
+    started = true;
+    stage = "arrival";
+    const shepherd = getShepherd();
+    revealShepherd(shepherd);
+
+    try {
+      const arrival = animateArrival(shepherd, { movePlayer: false });
+      await Promise.all([arrival, play(0)]);
+      arrivalComplete = true;
+      stage = "approach";
+      updateView({ label: "Continuer le récit", action: "shepherd" });
+    } catch (error) {
+      console.error("Impossible de lancer l’arrivée du berger.", error);
+      updateView({ label: "Reprendre le récit", action: "retry" });
+    }
   }
 
   function update(playerPosition) {
@@ -103,8 +123,11 @@ export function createNarrativeController({
     updateView();
     try {
       if (stage === "approach") {
-        stage = "arrival";
-        await animateArrival(getShepherd());
+        if (!arrivalComplete) {
+          stage = "arrival";
+          await animateArrival(getShepherd());
+          arrivalComplete = true;
+        }
         stage = "seated-story";
         await play(1);
         stage = "map";
@@ -159,6 +182,7 @@ export function createNarrativeController({
       loadingPromise = audio.loadNarration(NARRATION_FILES, ".");
       await loadingPromise;
     },
+    startAtCamp,
     activateBag,
     activateCollectible,
     activatePrompt,
