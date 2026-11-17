@@ -6,8 +6,8 @@ const NARRATION_FILES = Array.from(
 export function createNarrativeController({ audio, getShepherd, getBag, onChange, animateArrival, animateDeparture }) {
   let started = false;
   let busy = false;
-  let ready = false;
   let stage = "waiting-near-bag";
+  let loadingPromise = Promise.resolve();
 
   function updateView(prompt = null, reward = false) {
     onChange({ prompt, reward });
@@ -21,6 +21,7 @@ export function createNarrativeController({ audio, getShepherd, getBag, onChange
 
   async function runSequence() {
     try {
+      await loadingPromise;
       // FR_1 : le berger appelle le joueur et l’invite à s’approcher.
       await play(0);
       stage = "approach";
@@ -32,14 +33,27 @@ export function createNarrativeController({ audio, getShepherd, getBag, onChange
   }
 
   function update(playerPosition) {
-    if (!ready || started || stage !== "waiting-near-bag") return;
+    if (started || stage !== "waiting-near-bag") return;
     const bag = getBag();
     if (!bag) return;
     const distance = Math.hypot(playerPosition.x - bag.position.x, playerPosition.z - bag.position.z);
     if (distance > 1.8) return;
+    startFirstLine();
+  }
+
+  function startFirstLine() {
+    if (started) return;
     started = true;
     stage = "first-line";
     void runSequence();
+  }
+
+  function activateBag() {
+    if (stage === "waiting-near-bag") {
+      startFirstLine();
+      return;
+    }
+    void interact();
   }
 
   async function interact() {
@@ -99,9 +113,10 @@ export function createNarrativeController({ audio, getShepherd, getBag, onChange
 
   return {
     load: async () => {
-      await audio.loadNarration(NARRATION_FILES, ".");
-      ready = true;
+      loadingPromise = audio.loadNarration(NARRATION_FILES, ".");
+      await loadingPromise;
     },
+    activateBag,
     update,
     interact,
   };

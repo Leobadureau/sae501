@@ -634,7 +634,7 @@ interactionSystem = createInteractionSystem({
   isModelAction: (model) => model === loadedModels.get("assets/models/Sacoche1-optimized.glb"),
   onModelActivate: () => {
     audio.unlockSpatialAudio();
-    void narrative.interact();
+    narrative.activateBag();
   },
 });
 

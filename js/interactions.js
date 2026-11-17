@@ -217,7 +217,12 @@ export function createInteractionSystem({
     const hit = findPointerHit(event);
     pointerStart = { x: event.clientX, y: event.clientY, model: hit?.model ?? null };
     if (!hit) return;
-    if (isModelAction(hit.model)) return;
+    if (isModelAction(hit.model)) {
+      pointerStart = null;
+      unlockAudio();
+      onModelActivate(hit.model);
+      return;
+    }
     defaultRotateSpeed ??= controls.pointerControls.rotateSpeed;
     beginPointerGrab(event, hit);
     controls.pointerControls.rotateSpeed = 0;
