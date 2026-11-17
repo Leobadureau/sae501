@@ -47,13 +47,12 @@ export function createNarrativeController({
     try {
       await pickupBag(getBag(), controller);
       setBagOwned(true);
-      stage = "arrival";
+      stage = "first-line";
       const shepherd = getShepherd();
       revealShepherd(shepherd);
-      const arrival = animateArrival(shepherd);
-      await Promise.all([arrival, play(0)]);
+      await play(0);
       stage = "approach";
-      updateView({ label: "Continuer le récit", action: "shepherd" });
+      updateView({ label: "Approcher le berger", action: "shepherd" });
       return true;
     } catch (error) {
       console.error("Impossible de ramasser le sac ou de lancer le récit.", error);
@@ -108,6 +107,8 @@ export function createNarrativeController({
     updateView();
     try {
       if (stage === "approach") {
+        stage = "arrival";
+        await animateArrival(getShepherd());
         stage = "seated-story";
         await play(1);
         stage = "map";

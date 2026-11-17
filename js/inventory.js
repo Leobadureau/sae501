@@ -197,6 +197,7 @@ export function createInventorySystem({
       view.text.material.opacity = usable ? 1 : 0.45;
       view.iconMaterial.color.setHex(usable ? 0xeee5d8 : 0x7e7a74);
     }
+    syncView();
   }
 
   function syncView() {
@@ -205,12 +206,12 @@ export function createInventorySystem({
     for (const { button } of buttonViews.values()) button.visible = vrPanel.visible;
     closeButtonMesh.visible = vrPanel.visible;
     if (panel) panel.hidden = !opened || xrActive;
-    if (toggleButton) toggleButton.hidden = xrActive || !pcActive;
+    if (toggleButton) toggleButton.hidden = xrActive || !pcActive || !bagOwned;
     if (toggleButton) toggleButton.setAttribute("aria-expanded", String(opened));
   }
 
   function open() {
-    if (!pcActive && !renderer.xr.isPresenting) return;
+    if (!bagOwned || (!pcActive && !renderer.xr.isPresenting)) return;
     opened = true;
     syncView();
   }
@@ -273,6 +274,7 @@ export function createInventorySystem({
     setBagOwned(value) {
       bagOwned = Boolean(value);
       refresh();
+      if (!bagOwned) close();
     },
     setAvailableItems(items = []) {
       availableItems.clear();

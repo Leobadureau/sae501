@@ -6,9 +6,9 @@ import { SplatMesh, SparkControls, SparkXr, utils } from "@sparkjsdev/spark";
 import { addModelGlow, convertToBasicMaterials, waitForModelTextures } from "./model-materials.js";
 import { createMarkerDetection } from "./marker-detection.js?v=lower-scan-latency-20261116";
 import { createAudioSystem } from "./audio.js";
-import { createInteractionSystem } from "./interactions.js?v=inventory-system-20261117";
-import { createNarrativeController } from "./narrative.js?v=inventory-system-20261117";
-import { createInventorySystem } from "./inventory.js?v=inventory-system-20261117";
+import { createInteractionSystem } from "./interactions.js?v=inventory-gating-20261117";
+import { createNarrativeController } from "./narrative.js?v=inventory-gating-20261117";
+import { createInventorySystem } from "./inventory.js?v=inventory-gating-20261117";
 import {
   SPAWN_POSITION,
   PC_CAMERA_HEIGHT_OFFSET,
