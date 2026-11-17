@@ -409,6 +409,7 @@ export function createInventorySystem({
     close,
     select,
     refresh,
+    isOpen: () => opened,
     setPcActive(value) {
       pcActive = Boolean(value);
       if (!pcActive && !renderer.xr.isPresenting) close();

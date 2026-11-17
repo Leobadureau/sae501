@@ -16,6 +16,7 @@ export function createInteractionSystem({
   isModelAction = () => false,
   onModelActivate = () => {},
   onInventoryToggle = () => {},
+  isInventoryOpen = () => false,
 }) {
   const raycaster = new THREE.Raycaster();
   raycaster.far = 10;
@@ -26,7 +27,12 @@ export function createInteractionSystem({
   const grabPlane = new THREE.Plane();
   const grabPlaneHit = new THREE.Vector3();
   const controllers = [];
-  const palmGestureStates = Array.from({ length: 2 }, () => ({ openSince: null, latched: false }));
+  const palmGestureStates = Array.from({ length: 2 }, () => ({
+    openSince: null,
+    latched: false,
+    openedInventory: false,
+    closeRequested: false,
+  }));
   let pointerStart = null;
   let pointerGrab = null;
   let hoveredModel = null;
@@ -312,36 +318,43 @@ export function createInteractionSystem({
     endPointerGrab();
   });
 
-  function isOpenPalmFacingViewer(hand, viewerPosition) {
+  function getPalmGesture(hand, viewerPosition) {
     const joints = hand.joints;
     const wrist = joints?.wrist;
     const thumbTip = joints?.["thumb-tip"];
     const indexMetacarpal = joints?.["index-finger-metacarpal"];
-    if (!wrist?.visible || !thumbTip?.visible || !indexMetacarpal?.visible) return false;
+    if (!wrist?.visible || !thumbTip?.visible || !indexMetacarpal?.visible) return null;
 
     hand.updateWorldMatrix(true, true);
     const wristPosition = wrist.getWorldPosition(new THREE.Vector3());
     const wristQuaternion = wrist.getWorldQuaternion(new THREE.Quaternion());
     const palmNormal = new THREE.Vector3(0, -1, 0).applyQuaternion(wristQuaternion).normalize();
     const towardViewer = viewerPosition.clone().sub(wristPosition).normalize();
-    if (palmNormal.dot(towardViewer) < 0.65) return false;
-
     const extensionThresholds = [
-      ["index-finger-tip", 0.15],
-      ["middle-finger-tip", 0.16],
-      ["ring-finger-tip", 0.15],
-      ["pinky-finger-tip", 0.13],
+      ["index-finger-tip", 0.15, 0.13],
+      ["middle-finger-tip", 0.16, 0.14],
+      ["ring-finger-tip", 0.15, 0.13],
+      ["pinky-finger-tip", 0.13, 0.11],
     ];
+    const fingerDistances = [];
     for (const [jointName, minimumDistance] of extensionThresholds) {
       const tip = joints[jointName];
-      if (!tip?.visible || tip.getWorldPosition(new THREE.Vector3()).distanceTo(wristPosition) < minimumDistance) {
-        return false;
-      }
+      if (!tip?.visible) return null;
+      fingerDistances.push(tip.getWorldPosition(new THREE.Vector3()).distanceTo(wristPosition));
     }
 
     const thumbPosition = thumbTip.getWorldPosition(new THREE.Vector3());
     const indexBasePosition = indexMetacarpal.getWorldPosition(new THREE.Vector3());
-    return thumbPosition.distanceTo(indexBasePosition) > 0.065;
+    const fingersOpen = fingerDistances.every((distance, index) => distance > extensionThresholds[index][1]);
+    const fingersClosed = fingerDistances.every((distance, index) => distance < extensionThresholds[index][2]);
+    return {
+      openTowardViewer: fingersOpen
+        && !hand.inputState?.pinching
+        && thumbPosition.distanceTo(indexBasePosition) > 0.065
+        && palmNormal.dot(towardViewer) > 0.65,
+      palmDown: palmNormal.y < -0.65,
+      closedFist: fingersClosed,
+    };
   }
 
   function updatePalmGesture(time, xrFrame) {
@@ -354,6 +367,8 @@ export function createInteractionSystem({
       for (const state of palmGestureStates) {
         state.openSince = null;
         state.latched = false;
+        state.openedInventory = false;
+        state.closeRequested = false;
       }
       return;
     }
@@ -369,27 +384,54 @@ export function createInteractionSystem({
       const state = palmGestureStates[index];
       const hand = renderer.xr.getHand(index);
       const interactionController = controllers[index];
-      const openPalm = renderer.xr.isPresenting
+      if (state.openedInventory && !isInventoryOpen()) {
+        state.openedInventory = false;
+        state.closeRequested = false;
+        state.latched = false;
+      }
+      const trackedHand = renderer.xr.isPresenting
         && interactionController.handInput
         && hand.visible
-        && !hand.inputState?.pinching
-        && !interactionController.grabbed
-        && isOpenPalmFacingViewer(hand, viewerPosition);
+        && !interactionController.grabbed;
+      const gesture = trackedHand ? getPalmGesture(hand, viewerPosition) : null;
 
-      if (!openPalm) {
+      if (!gesture) {
         state.openSince = null;
-        state.latched = false;
+        state.closeRequested = false;
+        if (!state.openedInventory) state.latched = false;
         continue;
       }
-      if (state.latched) continue;
+      if (state.openedInventory && (gesture.palmDown || gesture.closedFist)) {
+        state.closeRequested = true;
+      }
+      if (state.closeRequested && time - lastPalmToggle >= 500) {
+        if (isInventoryOpen()) {
+          lastPalmToggle = time;
+          unlockAudio();
+          onInventoryToggle(hand);
+        }
+        state.openedInventory = false;
+        state.latched = true;
+        state.openSince = null;
+        state.closeRequested = false;
+        continue;
+      }
+
+      if (!gesture.openTowardViewer || state.latched || state.openedInventory) {
+        if (!gesture.openTowardViewer && !state.openedInventory) state.latched = false;
+        state.openSince = null;
+        continue;
+      }
       state.openSince ??= time;
-      if (time - state.openSince < 650) continue;
+      if (time - state.openSince < 650 || time - lastPalmToggle < 500) continue;
 
       state.latched = true;
-      if (time - lastPalmToggle < 1000) continue;
-      lastPalmToggle = time;
-      unlockAudio();
-      onInventoryToggle(hand);
+      if (!isInventoryOpen()) {
+        lastPalmToggle = time;
+        unlockAudio();
+        onInventoryToggle(hand);
+        state.openedInventory = isInventoryOpen();
+      }
     }
   }
 
@@ -402,6 +444,8 @@ export function createInteractionSystem({
       for (const state of palmGestureStates) {
         state.openSince = null;
         state.latched = false;
+        state.openedInventory = false;
+        state.closeRequested = false;
       }
       return;
     }
