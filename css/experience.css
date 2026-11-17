@@ -93,6 +93,16 @@
   letter-spacing: 0.025em;
 }
 
+.collectible-card .collectible-claim {
+  position: static;
+  width: fit-content;
+  padding: 7px 9px;
+  border: 1px solid rgba(230, 218, 199, 0.48);
+  color: #eee5d8;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+}
+
 .collectible-card button {
   position: absolute;
   top: 7px;

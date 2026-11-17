@@ -156,16 +156,20 @@ const fbxLoader = new FBXLoader();
 const interactiveModels = [];
 const modelsRevealedByGrab = new Map();
 const loadedModels = new Map();
+let collectibleModel = null;
 const shepherdAnimationStates = new WeakMap();
 const activeAnimationMixers = new Set();
 const ambientAnimationMixers = new Set();
 const cameraFacingFires = new Set();
 const activeWalks = new Map();
+const activeObjectTransitions = new Set();
+const activeModelFades = new Set();
 const animationClock = new THREE.Clock();
 const SHEPHERD_WALK_DISTANCE = 2.2;
 const ANIMATION_CROSSFADE_DURATION = 0.45;
 let seatedViewActive = false;
 let pendingSeatedTeleport = false;
+let seatedCameraTransition = null;
 let desktopViewBeforeXr = null;
 let interactionSystem = null;
 
@@ -184,13 +188,63 @@ function applyDesktopSeatedView() {
 function enterSeatedView() {
   seatedViewActive = true;
   if (renderer.xr.isPresenting) {
-    // WebXR owns the camera pose: move its parent on the next tracked frame.
     pendingSeatedTeleport = true;
   } else {
-    applyDesktopSeatedView();
+    const targetQuaternion = SEATED_CAMERA_ROTATION.clone();
+    const targetPosition = SEATED_CAMERA_POSITION.clone().sub(
+      camera.position.clone().applyQuaternion(targetQuaternion)
+    );
+    seatedCameraTransition = {
+      startPosition: localFrame.position.clone(),
+      startQuaternion: localFrame.quaternion.clone(),
+      startCameraQuaternion: camera.quaternion.clone(),
+      targetPosition,
+      targetQuaternion,
+      targetCameraQuaternion: new THREE.Quaternion(),
+      elapsed: 0,
+      duration: 0.9,
+      xr: false,
+    };
   }
   renderEnabled = true;
   lastMoved = performance.now();
+}
+
+function updateSeatedCameraTransition(delta) {
+  const transition = seatedCameraTransition;
+  if (!transition) return;
+  transition.elapsed = Math.min(transition.elapsed + delta, transition.duration);
+  const progress = transition.duration > 0 ? transition.elapsed / transition.duration : 1;
+  const eased = progress * progress * (3 - 2 * progress);
+  localFrame.position.lerpVectors(transition.startPosition, transition.targetPosition, eased);
+  localFrame.quaternion.slerpQuaternions(
+    transition.startQuaternion,
+    transition.targetQuaternion,
+    eased
+  );
+  if (!transition.xr && transition.targetCameraQuaternion) {
+    camera.quaternion.slerpQuaternions(
+      transition.startCameraQuaternion,
+      transition.targetCameraQuaternion,
+      eased
+    );
+  }
+  localFrame.updateWorldMatrix(true, true);
+  renderEnabled = true;
+  lastMoved = performance.now();
+  if (progress < 1) return;
+
+  localFrame.position.copy(transition.targetPosition);
+  localFrame.quaternion.copy(transition.targetQuaternion);
+  if (!transition.xr && transition.targetCameraQuaternion) {
+    camera.quaternion.copy(transition.targetCameraQuaternion);
+  }
+  seatedCameraTransition = null;
+  if (transition.xr) {
+    xrMovementCenter = null;
+    xrMovementStart = null;
+    xrMovementRotation = null;
+  }
 }
 
 function clampSeatedViewPitch() {
@@ -356,7 +410,7 @@ function playShepherdAnimation(model) {
     return arrival;
   }
 
-  const finalPosition = model.position.clone();
+  const finalPosition = model.userData.arrivalTarget?.clone() ?? model.position.clone();
   const mixer = new THREE.AnimationMixer(model);
   const walkAction = walkClip
     ? mixer.clipAction(stabilizeWalkRoot(walkClip.clone()))
@@ -366,14 +420,22 @@ function playShepherdAnimation(model) {
   const talkAction = visibleTalkClip
     ? mixer.clipAction(visibleTalkClip)
     : null;
+  const animationState = {
+    mixer,
+    walkClip,
+    walkAction,
+    talkAction,
+    departing: false,
+  };
 
   if (walkAction) {
     const forward = new THREE.Vector3(0, 0, 1)
       .applyQuaternion(model.quaternion)
       .normalize();
-    const startPosition = finalPosition
-      .clone()
-      .addScaledVector(forward, -SHEPHERD_WALK_DISTANCE);
+    const startPosition = model.userData.arrivalPrepared
+      ? model.position.clone()
+      : finalPosition.clone().addScaledVector(forward, -SHEPHERD_WALK_DISTANCE);
+    model.userData.arrivalPrepared = false;
     model.position.copy(startPosition);
     walkAction.setLoop(THREE.LoopOnce, 1);
     walkAction.clampWhenFinished = true;
@@ -388,6 +450,7 @@ function playShepherdAnimation(model) {
     const stopFootsteps = audio.startShepherdFootsteps(model);
     mixer.addEventListener("finished", (event) => {
       if (event.action !== walkAction) return;
+      if (animationState.departing) return;
       if (talkAction) {
         window.setTimeout(() => {
           stopFootsteps();
@@ -410,6 +473,7 @@ function playShepherdAnimation(model) {
     }
 
     mixer.addEventListener("finished", (event) => {
+      if (animationState.departing) return;
       if (event.action === walkAction) {
         const walk = activeWalks.get(mixer);
         if (walk) walk.model.position.copy(walk.finalPosition);
@@ -436,6 +500,7 @@ function playShepherdAnimation(model) {
     });
   } else {
     mixer.addEventListener("finished", () => {
+      if (animationState.departing) return;
       activeWalks.delete(mixer);
       activeAnimationMixers.delete(mixer);
       mixer.stopAllAction();
@@ -446,18 +511,36 @@ function playShepherdAnimation(model) {
   }
 
   activeAnimationMixers.add(mixer);
-  shepherdAnimationStates.set(model, { mixer, walkClip, walkAction, talkAction });
+  shepherdAnimationStates.set(model, animationState);
   console.info(
     `Playing shepherd arrival: ${walkClip?.name ?? "walking unavailable"}${talkClip ? `, then ${talkClip.name} (rotations amplified 6x)` : ""}`
   );
   return arrival;
 }
 
+function fadeModelOut(model, duration = 1.1) {
+  const materials = [];
+  model.traverse((child) => {
+    if (!child.isMesh) return;
+    const list = Array.isArray(child.material) ? child.material : [child.material];
+    for (const material of list) {
+      if (!material) continue;
+      material.transparent = true;
+      material.needsUpdate = true;
+      materials.push({ material, opacity: material.opacity ?? 1 });
+    }
+  });
+
+  return new Promise((resolve) => {
+    activeModelFades.add({ model, materials, elapsed: 0, duration, resolve });
+    renderEnabled = true;
+    lastMoved = performance.now();
+  });
+}
+
 function playShepherdDeparture(model, bag) {
   if (!model) return Promise.resolve();
   const previous = shepherdAnimationStates.get(model);
-  previous?.mixer.stopAllAction();
-  if (previous) activeAnimationMixers.delete(previous.mixer);
 
   if (bag) {
     model.add(bag);
@@ -467,36 +550,284 @@ function playShepherdDeparture(model, bag) {
     bag.visible = true;
   }
 
-  const walkClip = previous?.walkClip;
-  if (!walkClip) {
-    model.visible = false;
-    return Promise.resolve();
+  const { walkClip, walkAction, talkAction, mixer } = previous ?? {};
+  if (!walkClip || !walkAction || !mixer) {
+    return fadeModelOut(model);
   }
 
-  const mixer = new THREE.AnimationMixer(model);
-  const action = mixer.clipAction(stabilizeWalkRoot(walkClip.clone()));
-  action.setLoop(THREE.LoopOnce, 1);
-  action.clampWhenFinished = true;
+  previous.departing = true;
   const startPosition = model.position.clone();
   const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(model.quaternion).normalize();
-  const finalPosition = startPosition.clone().addScaledVector(forward, 3.5);
-  activeWalks.set(mixer, { model, startPosition, finalPosition, elapsed: 0, duration: walkClip.duration });
+  const finalPosition = startPosition.clone().addScaledVector(forward, 4.5);
+  activeWalks.set(mixer, {
+    model,
+    startPosition,
+    finalPosition,
+    elapsed: 0,
+    duration: walkClip.duration,
+  });
   activeAnimationMixers.add(mixer);
-  renderEnabled = true;
-  lastMoved = performance.now();
+  const stopFootsteps = audio.startShepherdFootsteps(model);
+  walkAction.reset();
+  walkAction.setLoop(THREE.LoopOnce, 1);
+  walkAction.clampWhenFinished = true;
 
   return new Promise((resolve) => {
-    mixer.addEventListener("finished", () => {
+    mixer.addEventListener("finished", (event) => {
+      if (event.action !== walkAction) return;
       model.position.copy(finalPosition);
       activeWalks.delete(mixer);
       activeAnimationMixers.delete(mixer);
+      stopFootsteps();
       mixer.stopAllAction();
       mixer.uncacheRoot(model);
-      model.visible = false;
-      resolve();
+      void fadeModelOut(model).then(resolve);
     });
-    action.play();
+    if (talkAction) walkAction.crossFadeFrom(talkAction, 0.65, false).play();
+    else walkAction.play();
   });
+}
+
+function animateObjectTo(object, targetPosition, duration = 0.8, onComplete = () => {}) {
+  return new Promise((resolve) => {
+    activeObjectTransitions.add({
+      object,
+      startPosition: object.position.clone(),
+      targetPosition: targetPosition.clone(),
+      duration,
+      elapsed: 0,
+      onComplete: () => {
+        onComplete();
+        resolve();
+      },
+    });
+    renderEnabled = true;
+    lastMoved = performance.now();
+  });
+}
+
+function advanceNarrativeVisuals(delta) {
+  for (const transition of activeObjectTransitions) {
+    transition.elapsed = Math.min(transition.elapsed + delta, transition.duration);
+    const progress = transition.duration > 0 ? transition.elapsed / transition.duration : 1;
+    const eased = progress * progress * (3 - 2 * progress);
+    transition.object.position.lerpVectors(
+      transition.startPosition,
+      transition.targetPosition,
+      eased
+    );
+    renderEnabled = true;
+    lastMoved = performance.now();
+    interactionSystem?.updateHighlights();
+    if (progress < 1) continue;
+    activeObjectTransitions.delete(transition);
+    transition.object.position.copy(transition.targetPosition);
+    transition.onComplete();
+  }
+
+  for (const fade of activeModelFades) {
+    fade.elapsed = Math.min(fade.elapsed + delta, fade.duration);
+    const progress = fade.duration > 0 ? fade.elapsed / fade.duration : 1;
+    for (const entry of fade.materials) {
+      entry.material.opacity = entry.opacity * (1 - progress);
+    }
+    renderEnabled = true;
+    lastMoved = performance.now();
+    interactionSystem?.updateHighlights();
+    if (progress < 1) continue;
+    activeModelFades.delete(fade);
+    fade.model.visible = false;
+    fade.resolve();
+  }
+}
+
+function placeNarrativeVisualInFront(object, distance = 0.95) {
+  camera.updateWorldMatrix(true, false);
+  const cameraPosition = camera.getWorldPosition(new THREE.Vector3());
+  const cameraDirection = camera.getWorldDirection(new THREE.Vector3());
+  object.position.copy(cameraPosition).addScaledVector(cameraDirection, distance);
+  object.quaternion.copy(camera.getWorldQuaternion(new THREE.Quaternion()));
+  scene.add(object);
+  renderEnabled = true;
+  lastMoved = performance.now();
+  window.setTimeout(() => {
+    scene.remove(object);
+    object.traverse((child) => {
+      child.geometry?.dispose();
+      const materials = Array.isArray(child.material) ? child.material : [child.material];
+      for (const material of materials) {
+        material?.map?.dispose();
+        material?.dispose();
+      }
+    });
+  }, 4200);
+}
+
+function showCorsicaMap() {
+  const canvas = document.createElement("canvas");
+  canvas.width = 512;
+  canvas.height = 700;
+  const context = canvas.getContext("2d");
+  context.fillStyle = "#e8ddc8";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.strokeStyle = "#685d4b";
+  context.lineWidth = 5;
+  context.strokeRect(18, 18, canvas.width - 36, canvas.height - 36);
+  context.fillStyle = "#262722";
+  context.font = "28px Georgia";
+  context.textAlign = "center";
+  context.fillText("CORSICA", 256, 82);
+  context.font = "18px Georgia";
+  context.fillText("MEDITERRANEU", 256, 620);
+  context.beginPath();
+  context.moveTo(264, 142);
+  context.lineTo(305, 185);
+  context.lineTo(296, 232);
+  context.lineTo(318, 274);
+  context.lineTo(298, 324);
+  context.lineTo(283, 380);
+  context.lineTo(260, 438);
+  context.lineTo(233, 493);
+  context.lineTo(211, 470);
+  context.lineTo(223, 415);
+  context.lineTo(207, 362);
+  context.lineTo(226, 318);
+  context.lineTo(214, 271);
+  context.lineTo(232, 225);
+  context.lineTo(224, 184);
+  context.closePath();
+  context.fillStyle = "#7a795f";
+  context.fill();
+  context.strokeStyle = "#443f34";
+  context.lineWidth = 6;
+  context.stroke();
+  context.beginPath();
+  context.moveTo(253, 175);
+  context.bezierCurveTo(281, 244, 223, 300, 270, 352);
+  context.bezierCurveTo(289, 394, 241, 434, 231, 478);
+  context.strokeStyle = "#bd875e";
+  context.lineWidth = 4;
+  context.stroke();
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  const card = new THREE.Group();
+  const backing = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.34, 0.47),
+    new THREE.MeshBasicMaterial({ color: 0x241f19, side: THREE.DoubleSide })
+  );
+  backing.position.z = -0.004;
+  const face = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.32, 0.45),
+    new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide })
+  );
+  card.add(backing, face);
+  placeNarrativeVisualInFront(card);
+}
+
+function showRope() {
+  const rope = new THREE.Group();
+  const material = new THREE.MeshBasicMaterial({ color: 0xb2966d });
+  for (let index = 0; index < 5; index += 1) {
+    const loop = new THREE.Mesh(new THREE.TorusGeometry(0.095, 0.012, 8, 32), material);
+    loop.position.x = (index - 2) * 0.018;
+    loop.rotation.z = (index - 2) * 0.14;
+    rope.add(loop);
+  }
+  const tail = new THREE.Mesh(
+    new THREE.TubeGeometry(
+      new THREE.CatmullRomCurve3([
+        new THREE.Vector3(0.04, -0.07, 0),
+        new THREE.Vector3(0.12, -0.13, 0.01),
+        new THREE.Vector3(0.18, -0.08, 0.02),
+      ]),
+      20,
+      0.012,
+      8,
+      false
+    ),
+    material
+  );
+  rope.add(tail);
+  placeNarrativeVisualInFront(rope, 0.8);
+}
+
+function animateBagHandoff(bag, shepherd) {
+  if (!bag || !shepherd) return Promise.resolve();
+  scene.attach(bag);
+  const start = bag.getWorldPosition(new THREE.Vector3());
+  const handOffset = new THREE.Vector3(0.2, 1.25, 0.2)
+    .applyQuaternion(shepherd.getWorldQuaternion(new THREE.Quaternion()));
+  const target = shepherd.getWorldPosition(new THREE.Vector3()).add(handOffset);
+  bag.position.copy(start);
+  bag.visible = true;
+  return animateObjectTo(bag, target, 0.9, () => {
+    shepherd.attach(bag);
+    bag.position.set(0.3, 0.65, 0.12);
+    bag.quaternion.identity();
+    bag.scale.setScalar(0.1);
+  });
+}
+
+function showCollectibleCard() {
+  const shepherd = loadedModels.get("assets/models/old man 3d model/tripo_convert_ad709b62-a73c-451d-b686-15168f7a6180.fbx");
+  if (!shepherd) return;
+  const texture = new THREE.TextureLoader().load("./assets/images/Carte_Berger.jpg");
+  texture.colorSpace = THREE.SRGBColorSpace;
+  collectibleModel = new THREE.Group();
+  collectibleModel.userData.narrativeCollectible = true;
+  const card = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.28, 0.42),
+    new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide })
+  );
+  collectibleModel.add(card);
+  const shepherdPosition = shepherd.getWorldPosition(new THREE.Vector3());
+  const cameraPosition = camera.getWorldPosition(new THREE.Vector3());
+  const towardPlayer = cameraPosition.sub(shepherdPosition).normalize();
+  collectibleModel.position.copy(shepherdPosition)
+    .addScaledVector(towardPlayer, 0.6)
+    .add(new THREE.Vector3(0, 1.7, 0));
+  collectibleModel.lookAt(camera.getWorldPosition(new THREE.Vector3()));
+  scene.add(collectibleModel);
+  collectibleModel.updateWorldMatrix(true, true);
+  const highlight = new THREE.BoxHelper(collectibleModel, 0xd8c9ae);
+  highlight.material.depthTest = false;
+  highlight.renderOrder = 1000;
+  highlight.visible = false;
+  scene.add(highlight);
+  const bounds = new THREE.Box3().setFromObject(collectibleModel)
+    .applyMatrix4(collectibleModel.matrixWorld.clone().invert())
+    .expandByScalar(0.025);
+  interactiveModels.push({ model: collectibleModel, highlight, bounds });
+  renderEnabled = true;
+  lastMoved = performance.now();
+}
+
+function collectNarrativeReward() {
+  const collectible = {
+    id: "ultimu-stregone",
+    title: "L’ultimu Stregone",
+    image: "./assets/images/Carte_Berger.jpg",
+  };
+  try {
+    const collection = JSON.parse(localStorage.getItem("aldila-collection") ?? "[]");
+    if (!collection.some((card) => card.id === collectible.id)) {
+      collection.push(collectible);
+      localStorage.setItem("aldila-collection", JSON.stringify(collection));
+    }
+  } catch (error) {
+    console.warn("La carte n’a pas pu être enregistrée dans le stockage local.", error);
+  }
+  window.dispatchEvent(new CustomEvent("aldila:collection-updated", { detail: collectible }));
+  if (collectibleModel) collectibleModel.visible = false;
+  interactionSystem?.updateHighlights();
+  const kicker = collectibleCard?.querySelector(".narrative-kicker");
+  if (kicker) kicker.textContent = "AJOUTÉE À VOTRE COLLECTION";
+  const claim = document.getElementById("collectible-claim");
+  if (claim) {
+    claim.textContent = "Ajoutée à votre collection";
+    claim.disabled = true;
+  }
 }
 
 async function loadMesh(mesh) {
@@ -631,10 +962,14 @@ interactionSystem = createInteractionSystem({
   unlockAudio: audio.unlockSpatialAudio,
   revealModel: () => {},
   convertMaterials: convertToBasicMaterials,
-  isModelAction: (model) => model === loadedModels.get("assets/models/Sacoche1-optimized.glb"),
-  onModelActivate: () => {
+  isModelAction: (model) => model === loadedModels.get("assets/models/Sacoche1-optimized.glb")
+    || model === loadedModels.get("assets/models/old man 3d model/tripo_convert_ad709b62-a73c-451d-b686-15168f7a6180.fbx")
+    || model === collectibleModel,
+  onModelActivate: (model) => {
     audio.unlockSpatialAudio();
-    narrative.activateBag();
+    if (model === collectibleModel) narrative.activateCollectible();
+    else if (model === loadedModels.get("assets/models/Sacoche1-optimized.glb")) narrative.activateBag();
+    else narrative.activateShepherd();
   },
 });
 
@@ -654,9 +989,15 @@ const narrative = createNarrativeController({
       narrativeAction.dataset.action = prompt.action;
     }
     if (collectibleCard && reward) collectibleCard.hidden = false;
+    const claim = document.getElementById("collectible-claim");
+    if (claim) claim.hidden = prompt?.action !== "collectible";
   },
   revealShepherd: (model) => {
     if (!model || model.visible) return;
+    model.userData.arrivalTarget = model.position.clone();
+    const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(model.quaternion).normalize();
+    model.position.copy(model.userData.arrivalTarget).addScaledVector(forward, -SHEPHERD_WALK_DISTANCE);
+    model.userData.arrivalPrepared = true;
     model.visible = true;
     playRevealFlash();
     renderEnabled = true;
@@ -669,7 +1010,12 @@ const narrative = createNarrativeController({
     }
     return Promise.resolve();
   },
+  animateHandoff: animateBagHandoff,
   animateDeparture: playShepherdDeparture,
+  showMap: showCorsicaMap,
+  showRope,
+  showCollectible: showCollectibleCard,
+  collectReward: collectNarrativeReward,
 });
 narrative.load().catch((error) => {
   console.error("Impossible de charger les audios de narration.", error);
@@ -680,7 +1026,10 @@ narrative.load().catch((error) => {
 });
 narrativeAction?.addEventListener("click", () => {
   audio.unlockSpatialAudio();
-  void narrative.interact();
+  void narrative.activatePrompt();
+});
+document.getElementById("collectible-claim")?.addEventListener("click", () => {
+  void narrative.activateCollectible();
 });
 document.getElementById("collectible-close")?.addEventListener("click", () => {
   if (collectibleCard) collectibleCard.hidden = true;
@@ -708,6 +1057,7 @@ function updateMovement(xrFrame) {
     const referenceSpace = renderer.xr.getReferenceSpace();
     const viewerPose = referenceSpace && xrFrame?.getViewerPose(referenceSpace);
     if (!viewerPose) return;
+    if (seatedCameraTransition?.xr) return;
 
     const viewerPosition = viewerPose.transform.position;
     if (pendingSeatedTeleport) {
@@ -717,16 +1067,27 @@ function updateMovement(xrFrame) {
       );
       const targetRotation = new THREE.Euler().setFromQuaternion(SEATED_CAMERA_ROTATION, "YXZ");
       // Align yaw only; pitch and roll continue to follow the person's head.
-      localFrame.rotation.set(0, targetRotation.y - headRotation.y, 0);
-      localFrame.position.copy(SEATED_CAMERA_POSITION).sub(
-        new THREE.Vector3(viewerPosition.x, viewerPosition.y, viewerPosition.z)
-          .applyQuaternion(localFrame.quaternion)
+      const targetQuaternion = new THREE.Quaternion().setFromEuler(
+        new THREE.Euler(0, targetRotation.y - headRotation.y, 0)
       );
+      const targetPosition = SEATED_CAMERA_POSITION.clone().sub(
+        new THREE.Vector3(viewerPosition.x, viewerPosition.y, viewerPosition.z)
+          .applyQuaternion(targetQuaternion)
+      );
+      seatedCameraTransition = {
+        startPosition: localFrame.position.clone(),
+        startQuaternion: localFrame.quaternion.clone(),
+        targetPosition,
+        targetQuaternion,
+        elapsed: 0,
+        duration: 0.9,
+        xr: true,
+      };
       pendingSeatedTeleport = false;
       xrMovementCenter = null;
       xrMovementStart = null;
       xrMovementRotation = null;
-      localFrame.updateWorldMatrix(true, true);
+      return;
     }
     if (!xrMovementCenter) {
       xrMovementCenter = new THREE.Vector3(viewerPosition.x, viewerPosition.y, viewerPosition.z);
@@ -822,6 +1183,7 @@ const xr = new SparkXr({
     xrButton.textContent = "Quitter AR";
   },
   onExitXr: () => {
+    seatedCameraTransition = null;
     if (desktopViewBeforeXr) {
       localFrame.position.copy(desktopViewBeforeXr.position);
       localFrame.quaternion.copy(desktopViewBeforeXr.quaternion);
@@ -909,6 +1271,7 @@ renderer.setAnimationLoop(function animate(time, xrFrame) {
   for (const mixer of activeAnimationMixers) {
     mixer.update(animationDelta);
   }
+  advanceNarrativeVisuals(animationDelta);
   if (activeAnimationMixers.size > 0) {
     renderEnabled = true;
     lastMoved = performance.now();
@@ -943,7 +1306,8 @@ renderer.setAnimationLoop(function animate(time, xrFrame) {
   if (!renderer.xr.isPresenting) controls.update(localFrame, camera);
   clampSeatedViewPitch();
   updateMovement(xrFrame);
-  narrative.update(localFrame.getWorldPosition(new THREE.Vector3()));
+  updateSeatedCameraTransition(animationDelta);
+  narrative.update(camera.getWorldPosition(new THREE.Vector3()));
   updateXrInteraction(time);
   updateCameraFacingFires(camera);
 
