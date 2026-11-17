@@ -210,7 +210,7 @@ export function createInteractionSystem({
       const hit = findControllerHit(controller);
       if (hit && isModelAction(hit.model)) {
         unlockAudio();
-        onModelActivate(hit.model);
+        onModelActivate(hit.model, controller);
         return;
       }
       toggleControllerGrab(interactionController);

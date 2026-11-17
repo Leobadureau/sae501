@@ -379,6 +379,30 @@ function playAmbientAnimation(model, clipName) {
   ambientAnimationMixers.add(mixer);
 }
 
+function prepareShepherdStandingPose(model) {
+  const walkClip = (model.animations ?? []).find((animation) =>
+    animation.name.toLocaleLowerCase().includes("walk")
+  );
+  if (!walkClip) return;
+
+  const mixer = new THREE.AnimationMixer(model);
+  const walkAction = mixer.clipAction(stabilizeWalkRoot(walkClip.clone()));
+  walkAction.setLoop(THREE.LoopOnce, 1);
+  walkAction.clampWhenFinished = true;
+  walkAction.play();
+  mixer.update(0);
+  walkAction.paused = true;
+  walkAction.time = 0;
+  shepherdAnimationStates.set(model, {
+    mixer,
+    walkClip,
+    walkAction,
+    talkAction: null,
+    prepared: true,
+    departing: false,
+  });
+}
+
 function playShepherdAnimation(model) {
   let finishArrival;
   const arrival = new Promise((resolve) => { finishArrival = resolve; });
@@ -411,9 +435,14 @@ function playShepherdAnimation(model) {
   }
 
   const finalPosition = model.userData.arrivalTarget?.clone() ?? model.position.clone();
-  const mixer = new THREE.AnimationMixer(model);
+  const preparedState = shepherdAnimationStates.get(model);
+  const mixer = preparedState?.prepared
+    ? preparedState.mixer
+    : new THREE.AnimationMixer(model);
   const walkAction = walkClip
-    ? mixer.clipAction(stabilizeWalkRoot(walkClip.clone()))
+    ? (preparedState?.prepared
+      ? preparedState.walkAction
+      : mixer.clipAction(stabilizeWalkRoot(walkClip.clone())))
     : null;
   const visibleTalkClip = talkClip?.clone();
   if (visibleTalkClip) amplifyAnimationRotations(visibleTalkClip, 6);
@@ -437,6 +466,7 @@ function playShepherdAnimation(model) {
       : finalPosition.clone().addScaledVector(forward, -SHEPHERD_WALK_DISTANCE);
     model.userData.arrivalPrepared = false;
     model.position.copy(startPosition);
+    walkAction.reset();
     walkAction.setLoop(THREE.LoopOnce, 1);
     walkAction.clampWhenFinished = true;
     activeWalks.set(mixer, {
@@ -779,6 +809,28 @@ function animateBagHandoff(bag, shepherd) {
   });
 }
 
+function pickUpNarrativeBag(bag, controller = null) {
+  if (!bag) return Promise.resolve();
+  const holder = controller ?? camera;
+  holder.updateWorldMatrix(true, true);
+  const localHoldPosition = controller
+    ? new THREE.Vector3(0.04, -0.03, -0.22)
+    : new THREE.Vector3(0.28, -0.24, -0.58);
+  const targetPosition = localHoldPosition.applyMatrix4(holder.matrixWorld);
+  scene.attach(bag);
+  bag.visible = true;
+  return animateObjectTo(bag, targetPosition, 0.55, () => {
+    holder.attach(bag);
+    bag.position.copy(localHoldPosition.set(
+      controller ? 0.04 : 0.28,
+      controller ? -0.03 : -0.24,
+      controller ? -0.22 : -0.58
+    ));
+    bag.quaternion.identity();
+    interactionSystem?.updateHighlights();
+  });
+}
+
 function showCollectibleCard() {
   const shepherd = loadedModels.get("assets/models/old man 3d model/tripo_convert_ad709b62-a73c-451d-b686-15168f7a6180.fbx");
   if (!shepherd) return;
@@ -984,10 +1036,10 @@ interactionSystem = createInteractionSystem({
   isModelAction: (model) => model === loadedModels.get("assets/models/Sacoche1-optimized.glb")
     || model === loadedModels.get("assets/models/old man 3d model/tripo_convert_ad709b62-a73c-451d-b686-15168f7a6180.fbx")
     || model === collectibleModel,
-  onModelActivate: (model) => {
+  onModelActivate: (model, controller = null) => {
     audio.unlockSpatialAudio();
     if (model === collectibleModel) narrative.activateCollectible();
-    else if (model === loadedModels.get("assets/models/Sacoche1-optimized.glb")) narrative.activateBag();
+    else if (model === loadedModels.get("assets/models/Sacoche1-optimized.glb")) narrative.activateBag(controller);
     else narrative.activateShepherd();
   },
 });
@@ -1017,6 +1069,7 @@ const narrative = createNarrativeController({
     const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(model.quaternion).normalize();
     model.position.copy(model.userData.arrivalTarget).addScaledVector(forward, -SHEPHERD_WALK_DISTANCE);
     model.userData.arrivalPrepared = true;
+    prepareShepherdStandingPose(model);
     model.visible = true;
     playRevealFlash();
     renderEnabled = true;
@@ -1029,6 +1082,7 @@ const narrative = createNarrativeController({
     }
     return Promise.resolve();
   },
+  pickupBag: pickUpNarrativeBag,
   animateHandoff: animateBagHandoff,
   animateDeparture: playShepherdDeparture,
   showMap: showCorsicaMap,

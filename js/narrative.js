@@ -10,6 +10,7 @@ export function createNarrativeController({
   onChange,
   revealShepherd,
   animateArrival,
+  pickupBag,
   animateHandoff,
   animateDeparture,
   showMap,
@@ -60,7 +61,7 @@ export function createNarrativeController({
     if (distance <= 1.8) startFirstLine();
   }
 
-  async function activateBag() {
+  async function activateBag(controller = null) {
     if (busy) return;
     if (stage === "waiting-near-bag") {
       startFirstLine();
@@ -83,8 +84,10 @@ export function createNarrativeController({
         stage = "return-bag";
         updateView({ label: "Prendre le sac", action: "bag" });
       } else if (stage === "return-bag") {
+        stage = "picking-up-bag";
+        await pickupBag(getBag(), controller);
         stage = "return-to-shepherd";
-        updateView({ label: "Rendre le sac au berger", action: "shepherd" });
+        updateView({ label: "Apporter le sac au berger", action: "shepherd" });
       }
     } catch (error) {
       console.error("Impossible de poursuivre le récit.", error);
