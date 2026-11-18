@@ -5,10 +5,10 @@ import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { SplatMesh, SparkControls, SparkXr, utils } from "@sparkjsdev/spark";
 import { addModelGlow, convertToBasicMaterials, waitForModelTextures } from "./model-materials.js";
 import { createMarkerDetection } from "./marker-detection.js?v=lower-scan-latency-20261116";
-import { createAudioSystem } from "./audio.js?v=vr-map-visibility-20261118";
+import { createAudioSystem } from "./audio.js?v=vr-map-overlay-20261118";
 import { createInteractionSystem } from "./interactions.js?v=glb-held-item-20261118";
 import { createNarrativeController } from "./narrative.js?v=glb-held-item-20261118";
-import { createInventorySystem } from "./inventory.js?v=vr-map-visibility-20261118";
+import { createInventorySystem } from "./inventory.js?v=vr-map-overlay-20261118";
 import { createXrTipsBanner } from "./xr-tips.js?v=vr-tips-sequence-20261118";
 import {
   SPAWN_POSITION,
@@ -705,6 +705,16 @@ function disposeNarrativeVisual(object) {
 }
 
 let heldNarrativeMap = null;
+let heldNarrativeMapPose = null;
+const heldMapOverlayScene = new THREE.Scene();
+
+function syncHeldNarrativeMapOverlay() {
+  if (!heldNarrativeMap || !heldNarrativeMapPose) return;
+  heldNarrativeMapPose.updateWorldMatrix(true, false);
+  heldNarrativeMap.position.copy(heldNarrativeMapPose.getWorldPosition(new THREE.Vector3()));
+  heldNarrativeMap.quaternion.copy(heldNarrativeMapPose.getWorldQuaternion(new THREE.Quaternion()));
+  heldNarrativeMap.scale.copy(heldNarrativeMapPose.getWorldScale(new THREE.Vector3()));
+}
 
 function removeHeldNarrativeMap() {
   if (heldNarrativeMap) {
@@ -712,6 +722,8 @@ function removeHeldNarrativeMap() {
     disposeNarrativeVisual(heldNarrativeMap);
     heldNarrativeMap = null;
   }
+  heldNarrativeMapPose?.parent?.remove(heldNarrativeMapPose);
+  heldNarrativeMapPose = null;
   inventory?.clearHeldItem();
 }
 
@@ -761,6 +773,15 @@ async function showCorsicaMap(holder = null) {
     scene.add(card);
     scene.updateMatrixWorld(true);
     anchor.attach(card);
+
+    // Keep the hand-tracked pose, but render the GLB after the splat world so
+    // the map cannot disappear behind the reconstructed environment.
+    heldNarrativeMapPose = new THREE.Object3D();
+    heldNarrativeMapPose.position.copy(card.position);
+    heldNarrativeMapPose.quaternion.copy(card.quaternion);
+    heldNarrativeMapPose.scale.copy(card.scale);
+    anchor.add(heldNarrativeMapPose);
+    heldMapOverlayScene.attach(card);
     heldNarrativeMap = card;
     renderEnabled = true;
     lastMoved = performance.now();
@@ -1469,7 +1490,15 @@ renderer.setAnimationLoop(function animate(time, xrFrame) {
   }
 
   if ((renderEnabled || xr.session || ambientAnimationFrame) && renderer.domElement.style.display !== "none") {
+    syncHeldNarrativeMapOverlay();
     renderer.render(scene, camera);
+    if (renderer.xr.isPresenting && heldNarrativeMap) {
+      renderer.clearDepth();
+      const autoClear = renderer.autoClear;
+      renderer.autoClear = false;
+      renderer.render(heldMapOverlayScene, camera);
+      renderer.autoClear = autoClear;
+    }
     if (loadingOverlay && !loadingOverlay.hidden) {
       loadingOverlay.hidden = true;
     }
