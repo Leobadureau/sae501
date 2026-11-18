@@ -1278,7 +1278,7 @@ const xr = new SparkXr({
     lastMoved = performance.now();
     movementPerimeter.visible = true;
     renderer.setClearAlpha(xr.mode === "immersive-ar" ? 0 : 1);
-    xrButton.textContent = "Quitter AR";
+    xrButton.textContent = "Quitter la VR";
   },
   onExitXr: () => {
     seatedCameraTransition = null;
@@ -1301,7 +1301,7 @@ const xr = new SparkXr({
     xrMovementCenter = null;
     xrMovementStart = null;
     xrMovementRotation = null;
-    xrButton.textContent = "Entrer en AR";
+    xrButton.textContent = "Rentrer en VR";
   },
   // Head tracking and scripted teleportation control the view in the headset.
   controllers: { moveSpeed: 0, rotateSpeed: 0, rollSpeed: 0 },
@@ -1385,7 +1385,7 @@ renderer.setAnimationLoop(function animate(time, xrFrame) {
       renderer.setClearAlpha(0);
       setWorldVisible(true);
       if (xrReady && xrSupported) {
-        xrButton.textContent = "Entrer en AR";
+        xrButton.textContent = "Rentrer en VR";
         xrButton.hidden = false;
       } else if (xrReady) {
         xrStatus.textContent = "La réalité augmentée immersive n’est pas prise en charge par cet appareil.";
