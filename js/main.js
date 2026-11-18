@@ -9,6 +9,7 @@ import { createAudioSystem } from "./audio.js";
 import { createInteractionSystem } from "./interactions.js?v=palm-close-fist-20261117";
 import { createNarrativeController } from "./narrative.js?v=wrong-choice-audio-20261117";
 import { createInventorySystem } from "./inventory.js?v=palm-close-fist-20261117";
+import { createXrTipsBanner } from "./xr-tips.js?v=world-space-vr-tips-20261118";
 import {
   SPAWN_POSITION,
   PC_CAMERA_HEIGHT_OFFSET,
@@ -39,7 +40,7 @@ const arModeButton = document.getElementById("ar-mode");
 const musicToggle = document.getElementById("music-toggle");
 const xrButton = document.getElementById("vr-button");
 const xrStatus = document.getElementById("xr-status");
-const xrHelp = document.getElementById("xr-help");
+const xrTipsBanner = createXrTipsBanner(THREE, camera);
 const audio = createAudioSystem({ THREE, audioListener, scene, renderer, musicToggle });
 let inventory = null;
 const markerTracker = createMarkerDetection({
@@ -78,7 +79,7 @@ function enterPcMode(event) {
   markerDetection.locked = true;
   markerDetection.enabled = false;
   xrButton.hidden = true;
-  if (xrHelp) xrHelp.hidden = true;
+  if (xrTipsBanner) xrTipsBanner.visible = false;
   camera.position.y = PC_CAMERA_HEIGHT_OFFSET;
   movementPerimeter.visible = false;
   stopMarkerCamera();
@@ -1269,7 +1270,7 @@ const xr = new SparkXr({
     }
   },
   onEnterXr: () => {
-    if (xrHelp) xrHelp.hidden = false;
+    if (xrTipsBanner) xrTipsBanner.visible = true;
     desktopViewBeforeXr = {
       position: localFrame.position.clone(),
       quaternion: localFrame.quaternion.clone(),
@@ -1289,7 +1290,7 @@ const xr = new SparkXr({
     xrButton.textContent = "Quitter la VR";
   },
   onExitXr: () => {
-    if (xrHelp) xrHelp.hidden = true;
+    if (xrTipsBanner) xrTipsBanner.visible = false;
     seatedCameraTransition = null;
     if (desktopViewBeforeXr) {
       localFrame.position.copy(desktopViewBeforeXr.position);

@@ -613,31 +613,6 @@ body.inventory-open::after {
   text-shadow: 0 1px 3px var(--shadow-color);
 }
 
-.xr-help {
-  position: absolute;
-  left: 50%;
-  top: max(24px, env(safe-area-inset-top));
-  z-index: 18;
-  width: min(680px, calc(100vw - 36px));
-  margin: 0;
-  padding: 11px 18px;
-  transform: translateX(-50%);
-  border: 1px solid rgba(226, 202, 165, 0.26);
-  border-radius: 3px;
-  background: rgba(17, 16, 14, 0.58);
-  color: rgba(245, 235, 218, 0.82);
-  box-shadow: 0 5px 22px rgba(0, 0, 0, 0.2);
-  font: 13px/1.55 Georgia, "Times New Roman", serif;
-  letter-spacing: 0.025em;
-  text-align: center;
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.75);
-  pointer-events: none;
-}
-
-.xr-help[hidden] {
-  display: none;
-}
-
 .position-readout {
   position: absolute;
   left: max(16px, env(safe-area-inset-left));
