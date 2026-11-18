@@ -37,6 +37,9 @@ const revealFlash = document.getElementById("reveal-flash");
 const pcModeButton = document.getElementById("pc-mode");
 const arModeButton = document.getElementById("ar-mode");
 const musicToggle = document.getElementById("music-toggle");
+const xrButton = document.getElementById("vr-button");
+const xrStatus = document.getElementById("xr-status");
+const xrHelp = document.getElementById("xr-help");
 const audio = createAudioSystem({ THREE, audioListener, scene, renderer, musicToggle });
 let inventory = null;
 const markerTracker = createMarkerDetection({
@@ -74,6 +77,8 @@ function enterPcMode(event) {
   markerDetection.pcMode = true;
   markerDetection.locked = true;
   markerDetection.enabled = false;
+  xrButton.hidden = true;
+  if (xrHelp) xrHelp.hidden = true;
   camera.position.y = PC_CAMERA_HEIGHT_OFFSET;
   movementPerimeter.visible = false;
   stopMarkerCamera();
@@ -1231,9 +1236,6 @@ function updateMovement(xrFrame) {
   if (!seatedViewActive) localFrame.position.y = SPAWN_POSITION.y;
 }
 
-const xrButton = document.getElementById("vr-button");
-const xrStatus = document.getElementById("xr-status");
-const xrHelp = document.getElementById("xr-help");
 let xrReady = false;
 let xrSupported = false;
 let xrMovementCenter = null;
@@ -1252,11 +1254,15 @@ const xr = new SparkXr({
   mode: "ar",
   allowMobileXr: true,
   enableHands: true,
+  sessionInit: {
+    optionalFeatures: ["dom-overlay"],
+    domOverlay: { root: document.querySelector(".hud") },
+  },
   element: xrButton,
   onReady: (supported) => {
     xrReady = true;
     xrSupported = supported;
-    xrButton.hidden = !supported || !markerDetection.locked;
+    xrButton.hidden = !supported || !markerDetection.locked || markerDetection.pcMode;
     if (markerDetection.locked && !supported) {
       xrStatus.textContent = "La réalité augmentée immersive n’est pas prise en charge par cet appareil.";
       xrStatus.hidden = false;
@@ -1305,6 +1311,7 @@ const xr = new SparkXr({
     xrMovementStart = null;
     xrMovementRotation = null;
     xrButton.textContent = "Rentrer en VR";
+    xrButton.hidden = markerDetection.pcMode || !xrSupported;
   },
   // Head tracking and scripted teleportation control the view in the headset.
   controllers: { moveSpeed: 0, rotateSpeed: 0, rollSpeed: 0 },
@@ -1389,7 +1396,7 @@ renderer.setAnimationLoop(function animate(time, xrFrame) {
       setWorldVisible(true);
       if (xrReady && xrSupported) {
         xrButton.textContent = "Rentrer en VR";
-        xrButton.hidden = false;
+        xrButton.hidden = markerDetection.pcMode;
       } else if (xrReady) {
         xrStatus.textContent = "La réalité augmentée immersive n’est pas prise en charge par cet appareil.";
         xrStatus.hidden = false;
