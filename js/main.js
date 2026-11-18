@@ -6,7 +6,7 @@ import { SplatMesh, SparkControls, SparkXr, utils } from "@sparkjsdev/spark";
 import { addModelGlow, convertToBasicMaterials, waitForModelTextures } from "./model-materials.js";
 import { createMarkerDetection } from "./marker-detection.js?v=lower-scan-latency-20261116";
 import { createAudioSystem } from "./audio.js?v=vr-map-overlay-20261118";
-import { createInteractionSystem } from "./interactions.js?v=held-map-dismiss-20261118";
+import { createInteractionSystem } from "./interactions.js?v=vr-hand-skin-20261118";
 import { createNarrativeController } from "./narrative.js?v=glb-held-item-20261118";
 import { createInventorySystem } from "./inventory.js?v=held-map-dismiss-20261118";
 import { createXrTipsBanner } from "./xr-tips.js?v=vr-tips-sequence-20261118";
@@ -765,8 +765,8 @@ async function showCorsicaMap(holder = null) {
       handPosition.lerp(indexBase.getWorldPosition(new THREE.Vector3()), 0.62);
     }
     camera.updateWorldMatrix(true, false);
-    // Pull the card slightly toward the viewer so it clears the hand and scene.
-    handPosition.addScaledVector(camera.getWorldDirection(new THREE.Vector3()), -0.18);
+    // Lay the card just beyond the palm, away from the viewer's arm.
+    handPosition.addScaledVector(camera.getWorldDirection(new THREE.Vector3()), 0.055);
     card.position.copy(handPosition);
     card.quaternion.copy(camera.getWorldQuaternion(new THREE.Quaternion())).multiply(card.quaternion);
     card.visible = true;
@@ -1059,7 +1059,6 @@ interactionSystem = createInteractionSystem({
   modelsRevealedByGrab,
   unlockAudio: audio.unlockSpatialAudio,
   revealModel: () => {},
-  convertMaterials: convertToBasicMaterials,
   isModelAction: (model) => inventory?.isAction(model)
     || model === loadedModels.get("assets/models/Sacoche1-optimized.glb")
     || model === loadedModels.get("assets/models/old man 3d model/tripo_convert_ad709b62-a73c-451d-b686-15168f7a6180.fbx")

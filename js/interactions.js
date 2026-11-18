@@ -2,6 +2,55 @@ import { XRHandModelFactory } from "three/addons/webxr/XRHandModelFactory.js";
 
 const XR_HOVER_INTERVAL_MS = 50;
 
+function createHandMicrotexture(THREE) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 256;
+  canvas.height = 256;
+  const context = canvas.getContext("2d");
+  const image = context.createImageData(canvas.width, canvas.height);
+  for (let index = 0; index < image.data.length; index += 4) {
+    const pore = Math.random() < 0.025 ? -22 : 0;
+    const roughness = THREE.MathUtils.clamp(226 + Math.random() * 18 - 9 + pore, 0, 255);
+    image.data[index] = roughness;
+    image.data[index + 1] = roughness;
+    image.data[index + 2] = roughness;
+    image.data[index + 3] = 255;
+  }
+  context.putImageData(image, 0, 0);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.NoColorSpace;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+function styleHandModel(THREE, handModel) {
+  const microtexture = createHandMicrotexture(THREE);
+  handModel.traverse((child) => {
+    if (!child.isMesh) return;
+    const originalMaterials = Array.isArray(child.material) ? child.material : [child.material];
+    child.material = originalMaterials.map((original) => new THREE.MeshPhysicalMaterial({
+      color: original?.map ? (original.color ?? 0xffffff) : 0xd0a18a,
+      map: original?.map ?? null,
+      normalMap: original?.normalMap ?? null,
+      roughnessMap: original?.roughnessMap ?? microtexture,
+      alphaMap: original?.alphaMap ?? null,
+      roughness: 0.82,
+      metalness: 0,
+      clearcoat: 0.06,
+      clearcoatRoughness: 0.88,
+      transparent: original?.transparent ?? false,
+      opacity: original?.opacity ?? 1,
+      side: THREE.DoubleSide,
+    }));
+    if (child.material.length === 1) child.material = child.material[0];
+  });
+
+  const softLight = new THREE.HemisphereLight(0xffe8dc, 0x574138, 1.25);
+  const keyLight = new THREE.DirectionalLight(0xffeadc, 1.1);
+  keyLight.position.set(-0.45, 0.8, 0.65);
+  handModel.add(softLight, keyLight);
+}
+
 export function createInteractionSystem({
   THREE,
   renderer,
@@ -12,7 +61,6 @@ export function createInteractionSystem({
   modelsRevealedByGrab,
   unlockAudio,
   revealModel,
-  convertMaterials,
   isModelAction = () => false,
   onModelActivate = () => {},
   onHeldMapDismiss = () => false,
@@ -243,7 +291,7 @@ export function createInteractionSystem({
 
   const handModelFactory = new XRHandModelFactory(
     null,
-    (handModel) => convertMaterials(handModel)
+    (handModel) => styleHandModel(THREE, handModel)
   );
   for (let index = 0; index < 2; index += 1) {
     const hand = renderer.xr.getHand(index);
