@@ -9,7 +9,7 @@ import { createAudioSystem } from "./audio.js";
 import { createInteractionSystem } from "./interactions.js?v=palm-close-fist-20261117";
 import { createNarrativeController } from "./narrative.js?v=wrong-choice-audio-20261117";
 import { createInventorySystem } from "./inventory.js?v=palm-close-fist-20261117";
-import { createXrTipsBanner } from "./xr-tips.js?v=world-space-vr-tips-20261118";
+import { createXrTipsBanner } from "./xr-tips.js?v=vr-tips-sequence-20261118";
 import {
   SPAWN_POSITION,
   PC_CAMERA_HEIGHT_OFFSET,
@@ -41,6 +41,17 @@ const musicToggle = document.getElementById("music-toggle");
 const xrButton = document.getElementById("vr-button");
 const xrStatus = document.getElementById("xr-status");
 const xrTipsBanner = createXrTipsBanner(THREE, camera);
+const xrTipMessages = {
+  1: "Pincez la sacoche pour la saisir.",
+  2: "Pincez le berger pour lui parler.",
+  3: "Tendez la main vers l’icône sacoche et pincez pour ouvrir l’inventaire.",
+};
+let xrTipStep = 0;
+
+function showXrTip(step) {
+  xrTipStep = step;
+  xrTipsBanner?.show(xrTipMessages[step]);
+}
 const audio = createAudioSystem({ THREE, audioListener, scene, renderer, musicToggle });
 let inventory = null;
 const markerTracker = createMarkerDetection({
@@ -79,7 +90,7 @@ function enterPcMode(event) {
   markerDetection.locked = true;
   markerDetection.enabled = false;
   xrButton.hidden = true;
-  if (xrTipsBanner) xrTipsBanner.visible = false;
+  xrTipsBanner?.hide();
   camera.position.y = PC_CAMERA_HEIGHT_OFFSET;
   movementPerimeter.visible = false;
   stopMarkerCamera();
@@ -1044,12 +1055,29 @@ interactionSystem = createInteractionSystem({
     || model === collectibleModel,
   onModelActivate: (model, controller = null) => {
     audio.unlockSpatialAudio();
-    if (inventory?.isAction(model)) inventory.select(model.userData.inventoryAction);
+    if (inventory?.isAction(model)) {
+      inventory.select(model.userData.inventoryAction);
+      if (renderer.xr.isPresenting && xrTipStep === 3) {
+        xrTipStep = 4;
+        xrTipsBanner?.hide();
+      }
+    }
     else if (model === collectibleModel) narrative.activateCollectible();
-    else if (model === loadedModels.get("assets/models/Sacoche1-optimized.glb")) narrative.activateBag(controller);
-    else narrative.activateShepherd();
+    else if (model === loadedModels.get("assets/models/Sacoche1-optimized.glb")) {
+      if (renderer.xr.isPresenting && xrTipStep === 1) showXrTip(2);
+      narrative.activateBag(controller);
+    } else if (model === loadedModels.get("assets/models/old man 3d model/tripo_convert_ad709b62-a73c-451d-b686-15168f7a6180.fbx")) {
+      if (renderer.xr.isPresenting && xrTipStep === 2) showXrTip(3);
+      narrative.activateShepherd();
+    } else narrative.activateShepherd();
   },
-  onInventoryToggle: () => inventory?.toggle(),
+  onInventoryToggle: () => {
+    inventory?.toggle();
+    if (renderer.xr.isPresenting && xrTipStep === 3) {
+      xrTipStep = 4;
+      xrTipsBanner?.hide();
+    }
+  },
   isInventoryOpen: () => inventory?.isOpen() ?? false,
 });
 
@@ -1270,7 +1298,8 @@ const xr = new SparkXr({
     }
   },
   onEnterXr: () => {
-    if (xrTipsBanner) xrTipsBanner.visible = true;
+    if (xrTipStep === 0) xrTipStep = 1;
+    if (xrTipStep <= 3) xrTipsBanner?.show(xrTipMessages[xrTipStep]);
     desktopViewBeforeXr = {
       position: localFrame.position.clone(),
       quaternion: localFrame.quaternion.clone(),
@@ -1290,7 +1319,7 @@ const xr = new SparkXr({
     xrButton.textContent = "Quitter la VR";
   },
   onExitXr: () => {
-    if (xrTipsBanner) xrTipsBanner.visible = false;
+    xrTipsBanner?.hide();
     seatedCameraTransition = null;
     if (desktopViewBeforeXr) {
       localFrame.position.copy(desktopViewBeforeXr.position);
