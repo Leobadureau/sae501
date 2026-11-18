@@ -44,7 +44,7 @@ const xrTipsBanner = createXrTipsBanner(THREE, camera);
 const xrTipMessages = {
   1: "Pincez la sacoche pour la saisir.",
   2: "Pincez le berger pour lui parler.",
-  3: "Tendez la main vers l’icône sacoche et pincez pour ouvrir l’inventaire.",
+  3: "Tendez la main pour ouvrir l’inventaire.",
 };
 let xrTipStep = 0;
 
@@ -1064,10 +1064,16 @@ interactionSystem = createInteractionSystem({
     }
     else if (model === collectibleModel) narrative.activateCollectible();
     else if (model === loadedModels.get("assets/models/Sacoche1-optimized.glb")) {
-      if (renderer.xr.isPresenting && xrTipStep === 1) showXrTip(2);
+      if (renderer.xr.isPresenting && xrTipStep === 1) {
+        xrTipStep = 2;
+        xrTipsBanner?.hide();
+      }
       narrative.activateBag(controller);
     } else if (model === loadedModels.get("assets/models/old man 3d model/tripo_convert_ad709b62-a73c-451d-b686-15168f7a6180.fbx")) {
-      if (renderer.xr.isPresenting && xrTipStep === 2) showXrTip(3);
+      if (renderer.xr.isPresenting && xrTipStep === 2) {
+        xrTipStep = 3;
+        xrTipsBanner?.hide();
+      }
       narrative.activateShepherd();
     } else narrative.activateShepherd();
   },
@@ -1095,6 +1101,10 @@ const narrative = createNarrativeController({
       narrativeText.textContent = prompt.label;
       narrativeAction.textContent = prompt.label;
       narrativeAction.dataset.action = prompt.action;
+    }
+    if (renderer.xr.isPresenting && prompt) {
+      if ((xrTipStep === 1 || xrTipStep === 2) && prompt.action === "shepherd") showXrTip(2);
+      else if ((xrTipStep === 2 || xrTipStep === 3) && prompt.action === "inventory") showXrTip(3);
     }
     if (collectibleCard && reward) collectibleCard.hidden = false;
     inventory?.setAvailableItems(availableItems);
@@ -1126,7 +1136,13 @@ const narrative = createNarrativeController({
   showRope,
   showCollectible: showCollectibleCard,
   collectReward: collectNarrativeReward,
-  openInventory: () => inventory?.open(),
+  openInventory: () => {
+    inventory?.open();
+    if (renderer.xr.isPresenting && xrTipStep === 3) {
+      xrTipStep = 4;
+      xrTipsBanner?.hide();
+    }
+  },
   closeInventory: () => inventory?.close(),
 });
 
