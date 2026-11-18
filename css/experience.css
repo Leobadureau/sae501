@@ -525,37 +525,74 @@ body.inventory-open::after {
   top: 50%;
   left: 50%;
   z-index: 30;
-  min-width: min(260px, calc(100vw - 48px));
-  min-height: 64px;
-  padding: 17px 30px;
+  min-width: min(330px, calc(100vw - 48px));
+  min-height: 76px;
+  padding: 20px 72px 20px 42px;
   transform: translate(-50%, -50%);
-  border: 1px solid rgba(255, 241, 214, 0.95);
-  border-radius: 999px;
-  background: linear-gradient(135deg, #f3e7d1, #d4b887);
-  box-shadow: 0 0 0 5px rgba(243, 231, 209, 0.15), 0 12px 38px rgba(0, 0, 0, 0.55);
-  color: #211d17;
-  font: 700 17px/1.2 Georgia, "Times New Roman", serif;
-  letter-spacing: 0.08em;
-  text-shadow: 0 1px rgba(255, 255, 255, 0.45);
+  border: 0;
+  border-radius: 0;
+  clip-path: polygon(2% 7%, 8% 5%, 10% 2%, 24% 4%, 34% 1%, 48% 4%, 61% 1%, 73% 4%, 89% 2%, 92% 6%, 98% 5%, 97% 20%, 100% 28%, 97% 43%, 99% 58%, 97% 73%, 99% 91%, 93% 94%, 90% 98%, 76% 96%, 64% 99%, 50% 96%, 37% 99%, 23% 96%, 9% 98%, 7% 94%, 2% 95%, 3% 78%, 0 65%, 3% 50%, 1% 33%, 3% 20%);
+  background-color: #d5aa71;
+  background-image:
+    radial-gradient(ellipse at 20% 28%, rgba(255, 235, 194, 0.7), transparent 46%),
+    radial-gradient(ellipse at 78% 72%, rgba(128, 76, 36, 0.16), transparent 48%),
+    repeating-linear-gradient(4deg, rgba(111, 68, 34, 0.045) 0 1px, transparent 1px 4px),
+    linear-gradient(105deg, #c89455, #f0ce97 27%, #e3bd84 69%, #c18d50);
+  box-shadow: 0 9px 24px rgba(0, 0, 0, 0.5), inset 0 0 18px rgba(93, 53, 25, 0.24);
+  color: #21170f;
+  font: 600 19px/1.2 Georgia, "Times New Roman", serif;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-shadow: 0 1px rgba(255, 237, 202, 0.42);
   cursor: pointer;
   touch-action: manipulation;
   pointer-events: auto;
   transition: transform 180ms ease, box-shadow 180ms ease, filter 180ms ease;
 }
 
+.xr-button::after {
+  content: "⟶";
+  position: absolute;
+  top: 50%;
+  right: 32px;
+  transform: translateY(-50%);
+  font: 400 30px/1 Georgia, "Times New Roman", serif;
+  letter-spacing: 0;
+  transition: transform 180ms ease;
+}
+
 .xr-button:hover {
-  transform: translate(-50%, -50%) scale(1.06);
-  box-shadow: 0 0 0 8px rgba(243, 231, 209, 0.2), 0 16px 44px rgba(0, 0, 0, 0.62);
-  filter: brightness(1.08);
+  transform: translate(-50%, -50%) scale(1.035);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.62), inset 0 0 20px rgba(255, 239, 203, 0.28);
+  filter: brightness(1.08) saturate(1.06);
+}
+
+.xr-button:hover::after {
+  transform: translate(5px, -50%);
 }
 
 .xr-button:focus-visible {
-  outline: 3px solid #fff;
-  outline-offset: 6px;
+  outline: 2px solid #f8e8cd;
+  outline-offset: 5px;
 }
 
 .xr-button:active {
   transform: translate(-50%, -50%) scale(0.98);
+}
+
+@media (max-width: 520px) {
+  .xr-button {
+    min-width: min(300px, calc(100vw - 40px));
+    min-height: 68px;
+    padding: 18px 62px 18px 30px;
+    font-size: 16px;
+    letter-spacing: 0.11em;
+  }
+
+  .xr-button::after {
+    right: 26px;
+    font-size: 26px;
+  }
 }
 
 .xr-button[hidden],
