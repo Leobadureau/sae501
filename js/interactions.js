@@ -68,6 +68,15 @@ export function createInteractionSystem({
   isInventoryOpen = () => false,
 }) {
   const raycaster = new THREE.Raycaster();
+  const handMeshModels = new Set();
+  let heldMapOverlayActive = false;
+  function setHandModelOverlayLayer(handModel, overlayActive) {
+    const layer = overlayActive ? 1 : 0;
+    handModel.traverse((child) => {
+      if (child.isMesh || child.isLight) child.layers.set(layer);
+    });
+  }
+
   raycaster.far = 10;
   const pointer = new THREE.Vector2();
   const localRay = new THREE.Ray();
@@ -291,7 +300,11 @@ export function createInteractionSystem({
 
   const handModelFactory = new XRHandModelFactory(
     null,
-    (handModel) => styleHandModel(THREE, handModel)
+    (handModel) => {
+      styleHandModel(THREE, handModel);
+      handMeshModels.add(handModel);
+      setHandModelOverlayLayer(handModel, heldMapOverlayActive);
+    }
   );
   for (let index = 0; index < 2; index += 1) {
     const hand = renderer.xr.getHand(index);
@@ -536,6 +549,14 @@ export function createInteractionSystem({
     controllers,
     updateHighlights,
     updateXrInteraction,
+    setHeldMapOverlayActive(active) {
+      const nextValue = Boolean(active);
+      if (nextValue === heldMapOverlayActive) return;
+      heldMapOverlayActive = nextValue;
+      for (const handModel of handMeshModels) {
+        setHandModelOverlayLayer(handModel, heldMapOverlayActive);
+      }
+    },
     resetHoverTimer() {
       lastHoverUpdate = -Infinity;
     },

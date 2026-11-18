@@ -6,7 +6,7 @@ import { SplatMesh, SparkControls, SparkXr, utils } from "@sparkjsdev/spark";
 import { addModelGlow, convertToBasicMaterials, waitForModelTextures } from "./model-materials.js";
 import { createMarkerDetection } from "./marker-detection.js?v=lower-scan-latency-20261116";
 import { createAudioSystem } from "./audio.js?v=vr-map-overlay-20261118";
-import { createInteractionSystem } from "./interactions.js?v=vr-hand-skin-20261118";
+import { createInteractionSystem } from "./interactions.js?v=vr-held-card-grip-20261118";
 import { createNarrativeController } from "./narrative.js?v=glb-held-item-20261118";
 import { createInventorySystem } from "./inventory.js?v=held-map-dismiss-20261118";
 import { createXrTipsBanner } from "./xr-tips.js?v=vr-tips-sequence-20261118";
@@ -765,10 +765,21 @@ async function showCorsicaMap(holder = null) {
       handPosition.lerp(indexBase.getWorldPosition(new THREE.Vector3()), 0.62);
     }
     camera.updateWorldMatrix(true, false);
-    // Lay the card just beyond the palm, away from the viewer's arm.
-    handPosition.addScaledVector(camera.getWorldDirection(new THREE.Vector3()), 0.055);
+    const cameraQuaternion = camera.getWorldQuaternion(new THREE.Quaternion());
+    const cameraFacingQuaternion = cameraQuaternion.clone().multiply(card.quaternion);
+    if (wrist?.visible) {
+      const wristQuaternion = wrist.getWorldQuaternion(new THREE.Quaternion());
+      const palmNormal = new THREE.Vector3(0, -1, 0).applyQuaternion(wristQuaternion).normalize();
+      const palmFacingQuaternion = wristQuaternion.clone().multiply(
+        new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI)
+      );
+      handPosition.addScaledVector(palmNormal, 0.025);
+      card.quaternion.copy(cameraFacingQuaternion).slerp(palmFacingQuaternion, 0.35);
+    } else {
+      handPosition.addScaledVector(camera.getWorldDirection(new THREE.Vector3()), 0.035);
+      card.quaternion.copy(cameraFacingQuaternion);
+    }
     card.position.copy(handPosition);
-    card.quaternion.copy(camera.getWorldQuaternion(new THREE.Quaternion())).multiply(card.quaternion);
     card.visible = true;
     scene.add(card);
     scene.updateMatrixWorld(true);
@@ -1495,12 +1506,26 @@ renderer.setAnimationLoop(function animate(time, xrFrame) {
 
   if ((renderEnabled || xr.session || ambientAnimationFrame) && renderer.domElement.style.display !== "none") {
     syncHeldNarrativeMapOverlay();
+    const heldMapOverlayActive = renderer.xr.isPresenting && Boolean(heldNarrativeMap);
+    interactionSystem.setHeldMapOverlayActive(heldMapOverlayActive);
     renderer.render(scene, camera);
-    if (renderer.xr.isPresenting && heldNarrativeMap) {
+    if (heldMapOverlayActive) {
       renderer.clearDepth();
       const autoClear = renderer.autoClear;
       renderer.autoClear = false;
+      heldNarrativeMap.traverse((child) => {
+        if (!child.isMesh) return;
+        const materials = Array.isArray(child.material) ? child.material : [child.material];
+        for (const material of materials) {
+          material.depthTest = true;
+          material.depthWrite = true;
+        }
+      });
       renderer.render(heldMapOverlayScene, camera);
+      const cameraLayerMask = camera.layers.mask;
+      camera.layers.set(1);
+      renderer.render(scene, camera);
+      camera.layers.mask = cameraLayerMask;
       renderer.autoClear = autoClear;
     }
     if (loadingOverlay && !loadingOverlay.hidden) {
