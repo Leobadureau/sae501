@@ -1233,6 +1233,7 @@ function updateMovement(xrFrame) {
 
 const xrButton = document.getElementById("vr-button");
 const xrStatus = document.getElementById("xr-status");
+const xrHelp = document.getElementById("xr-help");
 let xrReady = false;
 let xrSupported = false;
 let xrMovementCenter = null;
@@ -1262,6 +1263,7 @@ const xr = new SparkXr({
     }
   },
   onEnterXr: () => {
+    if (xrHelp) xrHelp.hidden = false;
     desktopViewBeforeXr = {
       position: localFrame.position.clone(),
       quaternion: localFrame.quaternion.clone(),
@@ -1281,6 +1283,7 @@ const xr = new SparkXr({
     xrButton.textContent = "Quitter la VR";
   },
   onExitXr: () => {
+    if (xrHelp) xrHelp.hidden = true;
     seatedCameraTransition = null;
     if (desktopViewBeforeXr) {
       localFrame.position.copy(desktopViewBeforeXr.position);
