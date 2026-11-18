@@ -23,16 +23,50 @@ function createHandMicrotexture(THREE) {
   return texture;
 }
 
+function createSkinColorTexture(THREE) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 512;
+  canvas.height = 512;
+  const context = canvas.getContext("2d");
+  const image = context.createImageData(canvas.width, canvas.height);
+  for (let index = 0; index < image.data.length; index += 4) {
+    const variation = Math.random() * 8 - 4;
+    const freckle = Math.random() < 0.0015 ? -16 : 0;
+    image.data[index] = THREE.MathUtils.clamp(207 + variation + freckle, 0, 255);
+    image.data[index + 1] = THREE.MathUtils.clamp(157 + variation + freckle, 0, 255);
+    image.data[index + 2] = THREE.MathUtils.clamp(135 + variation + freckle, 0, 255);
+    image.data[index + 3] = 255;
+  }
+  context.putImageData(image, 0, 0);
+  for (let index = 0; index < 22; index += 1) {
+    const x = Math.random() * canvas.width;
+    const y = Math.random() * canvas.height;
+    const radius = 12 + Math.random() * 42;
+    const blush = context.createRadialGradient(x, y, 0, x, y, radius);
+    blush.addColorStop(0, Math.random() > 0.5 ? "rgba(188, 104, 98, 0.07)" : "rgba(249, 205, 178, 0.09)");
+    blush.addColorStop(1, "rgba(220, 164, 139, 0)");
+    context.fillStyle = blush;
+    context.fillRect(x - radius, y - radius, radius * 2, radius * 2);
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.needsUpdate = true;
+  return texture;
+}
+
 function styleHandModel(THREE, handModel) {
   const microtexture = createHandMicrotexture(THREE);
+  const skinTexture = createSkinColorTexture(THREE);
   handModel.traverse((child) => {
     if (!child.isMesh) return;
     const originalMaterials = Array.isArray(child.material) ? child.material : [child.material];
     child.material = originalMaterials.map((original) => new THREE.MeshPhysicalMaterial({
-      color: original?.map ? (original.color ?? 0xffffff) : 0xd0a18a,
-      map: original?.map ?? null,
+      color: 0xffffff,
+      map: original?.map ?? skinTexture,
       normalMap: original?.normalMap ?? null,
       roughnessMap: original?.roughnessMap ?? microtexture,
+      bumpMap: original?.bumpMap ?? microtexture,
+      bumpScale: 0.0008,
       alphaMap: original?.alphaMap ?? null,
       roughness: 0.82,
       metalness: 0,
@@ -48,7 +82,7 @@ function styleHandModel(THREE, handModel) {
   const softLight = new THREE.HemisphereLight(0xffe8dc, 0x574138, 1.25);
   const keyLight = new THREE.DirectionalLight(0xffeadc, 1.1);
   keyLight.position.set(-0.45, 0.8, 0.65);
-  handModel.add(softLight, keyLight);
+  handModel.add(softLight, keyLight, keyLight.target);
 }
 
 export function createInteractionSystem({
@@ -56,6 +90,7 @@ export function createInteractionSystem({
   renderer,
   camera,
   localFrame,
+  xrOverlayScene,
   controls,
   interactiveModels,
   modelsRevealedByGrab,
@@ -68,13 +103,14 @@ export function createInteractionSystem({
   isInventoryOpen = () => false,
 }) {
   const raycaster = new THREE.Raycaster();
-  const handMeshModels = new Set();
-  let heldMapOverlayActive = false;
-  function setHandModelOverlayLayer(handModel, overlayActive) {
-    const layer = overlayActive ? 1 : 0;
-    handModel.traverse((child) => {
-      if (child.isMesh || child.isLight) child.layers.set(layer);
-    });
+  const handOverlayAnchors = [];
+  function syncHandOverlayTransforms() {
+    for (const { hand, anchor } of handOverlayAnchors) {
+      hand.updateWorldMatrix(true, true);
+      anchor.position.copy(hand.getWorldPosition(new THREE.Vector3()));
+      anchor.quaternion.copy(hand.getWorldQuaternion(new THREE.Quaternion()));
+      anchor.scale.copy(hand.getWorldScale(new THREE.Vector3()));
+    }
   }
 
   raycaster.far = 10;
@@ -300,15 +336,15 @@ export function createInteractionSystem({
 
   const handModelFactory = new XRHandModelFactory(
     null,
-    (handModel) => {
-      styleHandModel(THREE, handModel);
-      handMeshModels.add(handModel);
-      setHandModelOverlayLayer(handModel, heldMapOverlayActive);
-    }
+    (handModel) => styleHandModel(THREE, handModel)
   );
   for (let index = 0; index < 2; index += 1) {
     const hand = renderer.xr.getHand(index);
-    hand.add(handModelFactory.createHandModel(hand, "mesh"));
+    const overlayAnchor = new THREE.Group();
+    const handModel = handModelFactory.createHandModel(hand, "mesh");
+    overlayAnchor.add(handModel);
+    xrOverlayScene.add(overlayAnchor);
+    handOverlayAnchors.push({ hand, anchor: overlayAnchor });
     localFrame.add(hand);
     const interactionController = controllers[index];
     hand.addEventListener("pinchend", () => {
@@ -549,14 +585,7 @@ export function createInteractionSystem({
     controllers,
     updateHighlights,
     updateXrInteraction,
-    setHeldMapOverlayActive(active) {
-      const nextValue = Boolean(active);
-      if (nextValue === heldMapOverlayActive) return;
-      heldMapOverlayActive = nextValue;
-      for (const handModel of handMeshModels) {
-        setHandModelOverlayLayer(handModel, heldMapOverlayActive);
-      }
-    },
+    syncHandOverlayTransforms,
     resetHoverTimer() {
       lastHoverUpdate = -Infinity;
     },

@@ -6,7 +6,7 @@ import { SplatMesh, SparkControls, SparkXr, utils } from "@sparkjsdev/spark";
 import { addModelGlow, convertToBasicMaterials, waitForModelTextures } from "./model-materials.js";
 import { createMarkerDetection } from "./marker-detection.js?v=lower-scan-latency-20261116";
 import { createAudioSystem } from "./audio.js?v=vr-map-overlay-20261118";
-import { createInteractionSystem } from "./interactions.js?v=vr-held-card-grip-20261118";
+import { createInteractionSystem } from "./interactions.js?v=vr-map-overlay-hands-20261118";
 import { createNarrativeController } from "./narrative.js?v=glb-held-item-20261118";
 import { createInventorySystem } from "./inventory.js?v=held-map-dismiss-20261118";
 import { createXrTipsBanner } from "./xr-tips.js?v=vr-tips-sequence-20261118";
@@ -1065,6 +1065,7 @@ interactionSystem = createInteractionSystem({
   renderer,
   camera,
   localFrame,
+  xrOverlayScene: heldMapOverlayScene,
   controls,
   interactiveModels,
   modelsRevealedByGrab,
@@ -1506,14 +1507,13 @@ renderer.setAnimationLoop(function animate(time, xrFrame) {
 
   if ((renderEnabled || xr.session || ambientAnimationFrame) && renderer.domElement.style.display !== "none") {
     syncHeldNarrativeMapOverlay();
-    const heldMapOverlayActive = renderer.xr.isPresenting && Boolean(heldNarrativeMap);
-    interactionSystem.setHeldMapOverlayActive(heldMapOverlayActive);
     renderer.render(scene, camera);
-    if (heldMapOverlayActive) {
+    if (renderer.xr.isPresenting) {
+      interactionSystem.syncHandOverlayTransforms();
       renderer.clearDepth();
       const autoClear = renderer.autoClear;
       renderer.autoClear = false;
-      heldNarrativeMap.traverse((child) => {
+      if (heldNarrativeMap) heldNarrativeMap.traverse((child) => {
         if (!child.isMesh) return;
         const materials = Array.isArray(child.material) ? child.material : [child.material];
         for (const material of materials) {
@@ -1522,10 +1522,6 @@ renderer.setAnimationLoop(function animate(time, xrFrame) {
         }
       });
       renderer.render(heldMapOverlayScene, camera);
-      const cameraLayerMask = camera.layers.mask;
-      camera.layers.set(1);
-      renderer.render(scene, camera);
-      camera.layers.mask = cameraLayerMask;
       renderer.autoClear = autoClear;
     }
     if (loadingOverlay && !loadingOverlay.hidden) {
