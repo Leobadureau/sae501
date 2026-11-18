@@ -5,11 +5,14 @@ export function createAudioSystem({ THREE, audioListener, scene, renderer, music
   const shepherdSpeechSounds = [];
   const activeFootstepSounds = new Set();
   const revealSounds = [];
+  const narrationFr3Sounds = new Set();
   const pendingTriggeredSounds = new Set();
   const activeNarrationSounds = new Set();
   let narrationBuffers = [];
   let musicMuted = false;
   let revealSoundsScheduled = false;
+  let fr3SoundsScheduled = false;
+  let audioBaseUrl = ".";
   let audioHasUserGesture = false;
   let worldAudioEnabled = false;
 
@@ -56,6 +59,78 @@ export function createAudioSystem({ THREE, audioListener, scene, renderer, music
       .then((buffers) => { narrationBuffers = buffers; });
   }
 
+  function scheduleFr3Sounds() {
+    if (fr3SoundsScheduled) return;
+    fr3SoundsScheduled = true;
+    const loader = new THREE.AudioLoader();
+    const cues = [
+      {
+        filename: "assets/Songs/Brebis.wav",
+        delayMs: 43000,
+        duration: 2.5,
+        volume: 0.8,
+        position: [9.989, 1.35, -5.257],
+        refDistance: 5,
+        maxDistance: 24,
+      },
+      {
+        filename: "assets/Songs/chien.wav",
+        delayMs: 50000,
+        duration: 1.5,
+        volume: 1,
+        position: [2.347, 1.354, 0.625],
+        refDistance: 5,
+        maxDistance: 24,
+      },
+    ];
+
+    for (const cue of cues) {
+      const sound = cue.position
+        ? new THREE.PositionalAudio(audioListener)
+        : new THREE.Audio(audioListener);
+      sound.setLoop(false);
+      sound.setVolume(cue.volume);
+      if (cue.position) {
+        sound.position.fromArray(cue.position);
+        sound.setRefDistance(cue.refDistance);
+        sound.setMaxDistance(cue.maxDistance);
+        sound.setRolloffFactor(1);
+        sound.setDistanceModel("inverse");
+      }
+      scene.add(sound);
+      narrationFr3Sounds.add(sound);
+
+      const handleThreeEnded = sound.onEnded.bind(sound);
+      sound.onEnded = () => {
+        handleThreeEnded();
+        pendingTriggeredSounds.delete(sound);
+        narrationFr3Sounds.delete(sound);
+        scene.remove(sound);
+        sound.disconnect();
+      };
+
+      const url = `${audioBaseUrl.replace(/\/$/, "")}/${cue.filename}`;
+      const bufferPromise = loader.loadAsync(url).catch((error) => {
+        console.error(`Failed to load narration sound: ${cue.filename}`, error);
+        return null;
+      });
+      window.setTimeout(() => {
+        void bufferPromise.then((buffer) => {
+          if (!buffer) {
+            narrationFr3Sounds.delete(sound);
+            scene.remove(sound);
+            sound.disconnect();
+            return;
+          }
+          sound.setBuffer(buffer);
+          sound.duration = cue.duration;
+          pendingTriggeredSounds.add(sound);
+          startReadySounds();
+        });
+      }, cue.delayMs);
+    }
+  }
+
   function playNarration(index, model) {
     const buffer = narrationBuffers[index];
     if (!buffer || !model) return Promise.reject(new Error(`Narration FR_${index + 1} unavailable.`));
@@ -86,6 +161,7 @@ export function createAudioSystem({ THREE, audioListener, scene, renderer, music
           return;
         }
         sound.play();
+        if (index === 2) scheduleFr3Sounds();
       };
       start();
     });
@@ -120,7 +196,11 @@ export function createAudioSystem({ THREE, audioListener, scene, renderer, music
     for (const sound of [...autoStartSounds, ...shepherdWalkSounds]) {
       if (sound.isPlaying) sound.pause();
     }
-    for (const sound of [...shepherdSpeechSounds, ...revealSounds.map(({ sound }) => sound)]) {
+    for (const sound of [
+      ...shepherdSpeechSounds,
+      ...revealSounds.map(({ sound }) => sound),
+      ...narrationFr3Sounds,
+    ]) {
       if (!sound.isPlaying) continue;
       sound.pause();
       pendingTriggeredSounds.add(sound);
@@ -135,6 +215,7 @@ export function createAudioSystem({ THREE, audioListener, scene, renderer, music
   }
 
   function loadSounds(configs, baseUrl) {
+    audioBaseUrl = baseUrl;
     const loader = new THREE.AudioLoader();
     for (const config of configs) {
       const sound = config.spatial === false

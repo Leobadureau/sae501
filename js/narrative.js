@@ -70,7 +70,7 @@ export function createNarrativeController({
     return beginFromBag(controller);
   }
 
-  async function selectInventoryItem(item) {
+  async function selectInventoryItem(item, holder = null) {
     if (busy) return false;
     if (stage === "map" && item !== "corsica-map") {
       playWrongChoice();
@@ -87,7 +87,7 @@ export function createNarrativeController({
     try {
       if (stage === "map") {
         stage = "map-story";
-        showMap();
+        await showMap(holder);
         await play(2);
         stage = "rope";
         updateView({ label: "Ouvrir l’inventaire et choisir la corde", action: "inventory" }, false, ["corsica-map", "rope"]);

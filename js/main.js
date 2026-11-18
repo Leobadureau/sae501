@@ -5,10 +5,10 @@ import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { SplatMesh, SparkControls, SparkXr, utils } from "@sparkjsdev/spark";
 import { addModelGlow, convertToBasicMaterials, waitForModelTextures } from "./model-materials.js";
 import { createMarkerDetection } from "./marker-detection.js?v=lower-scan-latency-20261116";
-import { createAudioSystem } from "./audio.js";
-import { createInteractionSystem } from "./interactions.js?v=palm-close-fist-20261117";
-import { createNarrativeController } from "./narrative.js?v=wrong-choice-audio-20261117";
-import { createInventorySystem } from "./inventory.js?v=palm-close-fist-20261117";
+import { createAudioSystem } from "./audio.js?v=fr3-spatial-sounds-20261118";
+import { createInteractionSystem } from "./interactions.js?v=glb-held-item-20261118";
+import { createNarrativeController } from "./narrative.js?v=glb-held-item-20261118";
+import { createInventorySystem } from "./inventory.js?v=glb-held-item-20261118";
 import { createXrTipsBanner } from "./xr-tips.js?v=vr-tips-sequence-20261118";
 import {
   SPAWN_POSITION,
@@ -693,95 +693,84 @@ function advanceNarrativeVisuals(delta) {
   }
 }
 
+function disposeNarrativeVisual(object) {
+  object.traverse((child) => {
+    child.geometry?.dispose();
+    const materials = Array.isArray(child.material) ? child.material : [child.material];
+    for (const material of materials) {
+      material?.map?.dispose();
+      material?.dispose();
+    }
+  });
+}
+
+let heldNarrativeMap = null;
+
+function removeHeldNarrativeMap() {
+  if (heldNarrativeMap) {
+    heldNarrativeMap.parent?.remove(heldNarrativeMap);
+    disposeNarrativeVisual(heldNarrativeMap);
+    heldNarrativeMap = null;
+  }
+  inventory?.clearHeldItem();
+}
+
 function placeNarrativeVisualInFront(object, distance = 0.95) {
   camera.updateWorldMatrix(true, false);
   const cameraPosition = camera.getWorldPosition(new THREE.Vector3());
   const cameraDirection = camera.getWorldDirection(new THREE.Vector3());
   object.position.copy(cameraPosition).addScaledVector(cameraDirection, distance);
-  object.quaternion.copy(camera.getWorldQuaternion(new THREE.Quaternion()));
+  object.quaternion.copy(camera.getWorldQuaternion(new THREE.Quaternion())).multiply(object.quaternion);
   scene.add(object);
   renderEnabled = true;
   lastMoved = performance.now();
   window.setTimeout(() => {
     scene.remove(object);
-    object.traverse((child) => {
-      child.geometry?.dispose();
-      const materials = Array.isArray(child.material) ? child.material : [child.material];
-      for (const material of materials) {
-        material?.map?.dispose();
-        material?.dispose();
-      }
-    });
+    disposeNarrativeVisual(object);
   }, 4200);
 }
 
-function showCorsicaMap() {
-  const canvas = document.createElement("canvas");
-  canvas.width = 512;
-  canvas.height = 700;
-  const context = canvas.getContext("2d");
-  context.fillStyle = "#e8ddc8";
-  context.fillRect(0, 0, canvas.width, canvas.height);
-  context.strokeStyle = "#685d4b";
-  context.lineWidth = 5;
-  context.strokeRect(18, 18, canvas.width - 36, canvas.height - 36);
-  context.fillStyle = "#262722";
-  context.font = "28px Georgia";
-  context.textAlign = "center";
-  context.fillText("CORSICA", 256, 82);
-  context.font = "18px Georgia";
-  context.fillText("MEDITERRANEU", 256, 620);
-  context.beginPath();
-  context.moveTo(264, 142);
-  context.lineTo(305, 185);
-  context.lineTo(296, 232);
-  context.lineTo(318, 274);
-  context.lineTo(298, 324);
-  context.lineTo(283, 380);
-  context.lineTo(260, 438);
-  context.lineTo(233, 493);
-  context.lineTo(211, 470);
-  context.lineTo(223, 415);
-  context.lineTo(207, 362);
-  context.lineTo(226, 318);
-  context.lineTo(214, 271);
-  context.lineTo(232, 225);
-  context.lineTo(224, 184);
-  context.closePath();
-  context.fillStyle = "#7a795f";
-  context.fill();
-  context.strokeStyle = "#443f34";
-  context.lineWidth = 6;
-  context.stroke();
-  context.beginPath();
-  context.moveTo(253, 175);
-  context.bezierCurveTo(281, 244, 223, 300, 270, 352);
-  context.bezierCurveTo(289, 394, 241, 434, 231, 478);
-  context.strokeStyle = "#bd875e";
-  context.lineWidth = 4;
-  context.stroke();
+async function showCorsicaMap(holder = null) {
+  removeHeldNarrativeMap();
+  if (markerDetection.pcMode) {
+    await inventory?.showHeldItem("corsica-map");
+    renderEnabled = true;
+    lastMoved = performance.now();
+    return;
+  }
 
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  const card = new THREE.Group();
+  const card = await inventory?.createHeldModel("corsica-map");
+  if (!card) return;
   card.userData.narrativeItem = "corsica-map";
-  card.renderOrder = 1000;
-  const backing = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.34, 0.47),
-    new THREE.MeshBasicMaterial({ color: 0x241f19, side: THREE.DoubleSide, depthTest: false, depthWrite: false })
-  );
-  backing.renderOrder = 1000;
-  backing.position.z = -0.004;
-  const face = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.32, 0.45),
-    new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide, depthTest: false, depthWrite: false })
-  );
-  face.renderOrder = 1001;
-  card.add(backing, face);
+
+  if (renderer.xr.isPresenting && holder?.isObject3D) {
+    const wrist = holder.joints?.wrist;
+    const anchor = wrist?.visible ? wrist : holder;
+    anchor.updateWorldMatrix(true, true);
+    const handPosition = anchor.getWorldPosition(new THREE.Vector3());
+    const indexBase = holder.joints?.["index-finger-metacarpal"];
+    if (wrist?.visible && indexBase?.visible) {
+      handPosition.lerp(indexBase.getWorldPosition(new THREE.Vector3()), 0.62);
+    }
+    camera.updateWorldMatrix(true, false);
+    handPosition.addScaledVector(camera.getWorldDirection(new THREE.Vector3()), 0.045);
+    card.position.copy(handPosition);
+    card.quaternion.copy(camera.getWorldQuaternion(new THREE.Quaternion())).multiply(card.quaternion);
+    card.visible = true;
+    scene.add(card);
+    scene.updateMatrixWorld(true);
+    anchor.attach(card);
+    heldNarrativeMap = card;
+    renderEnabled = true;
+    lastMoved = performance.now();
+    return;
+  }
+
   placeNarrativeVisualInFront(card);
 }
 
 function showRope() {
+  removeHeldNarrativeMap();
   const rope = new THREE.Group();
   rope.userData.narrativeItem = "rope";
   const material = new THREE.MeshBasicMaterial({ color: 0xb2966d });
@@ -1053,10 +1042,10 @@ interactionSystem = createInteractionSystem({
     || model === loadedModels.get("assets/models/Sacoche1-optimized.glb")
     || model === loadedModels.get("assets/models/old man 3d model/tripo_convert_ad709b62-a73c-451d-b686-15168f7a6180.fbx")
     || model === collectibleModel,
-  onModelActivate: (model, controller = null) => {
+  onModelActivate: (model, holder = null) => {
     audio.unlockSpatialAudio();
     if (inventory?.isAction(model)) {
-      inventory.select(model.userData.inventoryAction);
+      inventory.select(model.userData.inventoryAction, holder);
       if (renderer.xr.isPresenting && xrTipStep === 3) {
         xrTipStep = 4;
         xrTipsBanner?.hide();
@@ -1068,7 +1057,7 @@ interactionSystem = createInteractionSystem({
         xrTipStep = 2;
         xrTipsBanner?.hide();
       }
-      narrative.activateBag(controller);
+      narrative.activateBag(holder);
     } else if (model === loadedModels.get("assets/models/old man 3d model/tripo_convert_ad709b62-a73c-451d-b686-15168f7a6180.fbx")) {
       if (renderer.xr.isPresenting && xrTipStep === 2) {
         xrTipStep = 3;
@@ -1160,7 +1149,8 @@ inventory = createInventorySystem({
   closeButton: document.getElementById("inventory-close"),
   bagStatus: document.getElementById("inventory-bag-status"),
   itemButtons: inventoryButtons,
-  onSelectItem: (item) => narrative.selectInventoryItem(item),
+  heldItemElement: document.getElementById("pc-held-map"),
+  onSelectItem: (item, holder) => narrative.selectInventoryItem(item, holder),
 });
 interactiveModels.push(...inventory.getInteractiveModels());
 inventory.setPcActive(markerDetection.pcMode);
@@ -1336,6 +1326,7 @@ const xr = new SparkXr({
   },
   onExitXr: () => {
     xrTipsBanner?.hide();
+    removeHeldNarrativeMap();
     seatedCameraTransition = null;
     if (desktopViewBeforeXr) {
       localFrame.position.copy(desktopViewBeforeXr.position);

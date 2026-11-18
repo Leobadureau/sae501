@@ -17,6 +17,7 @@ export function createInventorySystem({
   closeButton,
   bagStatus,
   itemButtons,
+  heldItemElement,
   onSelectItem = () => false,
 }) {
   const availableItems = new Set();
@@ -38,6 +39,8 @@ export function createInventorySystem({
   previewKeyLight.position.set(-2, 3, 4);
   desktopPreviewScene.add(previewKeyLight);
   const desktopPreviewModels = new Map();
+  const sourceModels = new Map();
+  let heldItemKey = null;
   const previewCanvas = document.createElement("canvas");
   previewCanvas.className = "inventory-preview-canvas";
   previewCanvas.setAttribute("aria-hidden", "true");
@@ -275,6 +278,7 @@ export function createInventorySystem({
     try {
       const loaded = await gltfLoader.loadAsync(ITEM_MODELS[key]);
       const source = loaded.scene;
+      sourceModels.set(key, source);
       const desktopModel = normalizeModel(source.clone(true), 1.55, true);
       desktopPreviewScene.add(desktopModel);
       desktopPreviewModels.set(key, desktopModel);
@@ -290,10 +294,42 @@ export function createInventorySystem({
     }
   }
 
-  void Promise.all([
+  const previewLoads = Promise.all([
     loadVrPreview("corsica-map", -0.47),
     loadVrPreview("rope", 0.47),
   ]);
+
+  async function createHeldModel(key) {
+    await previewLoads;
+    const source = sourceModels.get(key);
+    if (!source) return null;
+    const model = normalizeModel(source.clone(true), 0.34, true);
+    const clonedMaterials = [];
+    model.traverse((child) => {
+      if (!child.isMesh) return;
+      child.geometry = child.geometry.clone();
+      const materials = Array.isArray(child.material) ? child.material : [child.material];
+      for (const material of materials) {
+        clonedMaterials.push(material);
+        if (material.map) {
+          material.map = material.map.clone();
+          material.map.needsUpdate = true;
+        }
+      }
+    });
+    convertToBasicMaterials(model);
+    for (const material of clonedMaterials) material.dispose();
+    model.traverse((child) => {
+      if (!child.isMesh) return;
+      child.renderOrder = 1000;
+      const materials = Array.isArray(child.material) ? child.material : [child.material];
+      for (const material of materials) {
+        material.depthTest = false;
+        material.depthWrite = false;
+      }
+    });
+    return model;
+  }
 
   function syncView() {
     const xrActive = renderer.xr.isPresenting;
@@ -302,6 +338,7 @@ export function createInventorySystem({
     vrToggleButton.visible = vrToggle.visible;
     for (const { button } of buttonViews.values()) button.visible = vrPanel.visible;
     if (panel) panel.hidden = !opened || !bagOwned || xrActive;
+    if (heldItemElement) heldItemElement.hidden = !heldItemKey || xrActive || !pcActive;
     if (toggleButton) {
       toggleButton.hidden = xrActive || !pcActive || !bagOwned;
       toggleButton.setAttribute("aria-expanded", String(opened));
@@ -346,18 +383,23 @@ export function createInventorySystem({
   }
 
   function renderDesktopPreviews() {
-    const visible = opened && bagOwned && pcActive && !renderer.xr.isPresenting;
+    const inventoryVisible = opened && bagOwned && pcActive && !renderer.xr.isPresenting;
+    const heldItemVisible = Boolean(heldItemKey) && pcActive && !renderer.xr.isPresenting;
+    const visible = inventoryVisible || heldItemVisible;
     previewCanvas.style.display = visible ? "block" : "none";
     if (!visible || desktopPreviewModels.size === 0) return;
 
     const canvasBounds = previewCanvas.getBoundingClientRect();
     if (!canvasBounds.width || !canvasBounds.height) return;
+    previewRenderer.setScissorTest(false);
+    previewRenderer.clear(true, true, true);
     previewRenderer.setScissorTest(true);
 
-    for (const [key, model] of desktopPreviewModels) {
+    if (inventoryVisible) for (const [key, model] of desktopPreviewModels) {
       const art = itemButtons.get(key)?.querySelector(".inventory-art");
       if (!art) continue;
       const bounds = art.getBoundingClientRect();
+      if (!bounds.width || !bounds.height) continue;
       const left = bounds.left - canvasBounds.left;
       const bottom = canvasBounds.bottom - bounds.bottom;
       desktopPreviewCamera.aspect = bounds.width / Math.max(bounds.height, 1);
@@ -371,17 +413,49 @@ export function createInventorySystem({
       model.rotation.y += 0.0018;
       previewRenderer.render(desktopPreviewScene, desktopPreviewCamera);
     }
+
+    if (heldItemVisible && heldItemElement) {
+      const model = desktopPreviewModels.get(heldItemKey);
+      const bounds = heldItemElement.getBoundingClientRect();
+      if (model && bounds.width && bounds.height) {
+        const left = bounds.left - canvasBounds.left;
+        const bottom = canvasBounds.bottom - bounds.bottom;
+        desktopPreviewCamera.aspect = bounds.width / Math.max(bounds.height, 1);
+        desktopPreviewCamera.updateProjectionMatrix();
+        previewRenderer.setViewport(left, bottom, bounds.width, bounds.height);
+        previewRenderer.setScissor(left, bottom, bounds.width, bounds.height);
+        previewRenderer.clear(true, true, true);
+        for (const [key, otherModel] of desktopPreviewModels) {
+          otherModel.visible = key === heldItemKey;
+        }
+        previewRenderer.render(desktopPreviewScene, desktopPreviewCamera);
+      }
+    }
+
     for (const model of desktopPreviewModels.values()) model.visible = true;
     previewRenderer.setScissorTest(false);
   }
 
-  function select(key) {
+  async function showHeldItem(key) {
+    heldItemKey = key;
+    syncView();
+    await previewLoads;
+    renderDesktopPreviews();
+  }
+
+  function clearHeldItem() {
+    heldItemKey = null;
+    syncView();
+    renderDesktopPreviews();
+  }
+
+  function select(key, holder = null) {
     if (key === "inventory-toggle") {
       toggle();
       return true;
     }
     if (!availableItems.has(key)) return false;
-    const accepted = onSelectItem(key);
+    const accepted = onSelectItem(key, holder);
     if (accepted === false) return false;
     close();
     if (accepted && typeof accepted.then === "function") void accepted;
@@ -408,6 +482,9 @@ export function createInventorySystem({
     open,
     close,
     select,
+    createHeldModel,
+    showHeldItem,
+    clearHeldItem,
     refresh,
     isOpen: () => opened,
     setPcActive(value) {

@@ -198,6 +198,7 @@ export function createInteractionSystem({
 
   for (let index = 0; index < 2; index += 1) {
     const controller = renderer.xr.getController(index);
+    const grip = renderer.xr.getControllerGrip(index);
     const ray = new THREE.Line(
       new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(0, 0, -1)]),
       new THREE.LineBasicMaterial({ color: 0x65e6c5, transparent: true, opacity: 0.85 })
@@ -206,7 +207,7 @@ export function createInteractionSystem({
     ray.visible = false;
     controller.add(ray);
 
-    const interactionController = { controller, ray, connected: false, handInput: false, grabbed: null };
+    const interactionController = { controller, grip, ray, connected: false, handInput: false, grabbed: null };
     controller.addEventListener("connected", (event) => {
       interactionController.connected = true;
       interactionController.handInput = Boolean(event.data?.hand);
@@ -226,12 +227,12 @@ export function createInteractionSystem({
       const hit = findControllerHit(controller);
       if (hit && isModelAction(hit.model)) {
         unlockAudio();
-        onModelActivate(hit.model, controller);
+        onModelActivate(hit.model, interactionController.grip);
         return;
       }
       toggleControllerGrab(interactionController);
     });
-    localFrame.add(controller);
+    localFrame.add(controller, grip);
     controllers.push(interactionController);
   }
 
@@ -252,7 +253,7 @@ export function createInteractionSystem({
       const hit = findControllerHit(interactionController.controller);
       if (!hit) return;
       unlockAudio();
-      if (isModelAction(hit.model)) onModelActivate(hit.model, interactionController.controller);
+      if (isModelAction(hit.model)) onModelActivate(hit.model, hand);
       else beginControllerGrab(interactionController, hit);
     });
   }
