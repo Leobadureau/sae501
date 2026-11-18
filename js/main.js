@@ -8,7 +8,7 @@ import { createMarkerDetection } from "./marker-detection.js?v=lower-scan-latenc
 import { createAudioSystem } from "./audio.js?v=vr-map-overlay-20261118";
 import { createInteractionSystem } from "./interactions.js?v=glb-held-item-20261118";
 import { createNarrativeController } from "./narrative.js?v=glb-held-item-20261118";
-import { createInventorySystem } from "./inventory.js?v=vr-map-overlay-20261118";
+import { createInventorySystem } from "./inventory.js?v=vr-map-front-20261118";
 import { createXrTipsBanner } from "./xr-tips.js?v=vr-tips-sequence-20261118";
 import {
   SPAWN_POSITION,

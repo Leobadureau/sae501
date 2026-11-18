@@ -242,7 +242,7 @@ export function createInventorySystem({
     model.position.set(-center.x * scale, -center.y * scale, -center.z * scale);
     // These props are authored lying flat; tilt them toward the desktop camera.
     if (orientForScreen && size.y < Math.max(size.x, size.z) * 0.25) {
-      model.rotation.x = -Math.PI / 2;
+      model.rotation.x = Math.PI / 2;
     }
     model.traverse((child) => {
       if (!child.isMesh) return;
