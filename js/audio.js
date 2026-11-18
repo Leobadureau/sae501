@@ -59,7 +59,7 @@ export function createAudioSystem({ THREE, audioListener, scene, renderer, music
       .then((buffers) => { narrationBuffers = buffers; });
   }
 
-  function scheduleFr3Sounds() {
+  function scheduleFr3Sounds(fr3StartedAt = audioListener.context.currentTime) {
     if (fr3SoundsScheduled) return;
     fr3SoundsScheduled = true;
     const loader = new THREE.AudioLoader();
@@ -67,8 +67,9 @@ export function createAudioSystem({ THREE, audioListener, scene, renderer, music
       {
         filename: "assets/Songs/Brebis.wav",
         delayMs: 43000,
-        // 43 s → 49.8 s, leaving 0.2 s before the dog cue at 50 s.
-        duration: 6.8,
+        // Play until the dog starts at 50 s, fading away over the last second.
+        duration: 7,
+        fadeOutDuration: 1,
         volume: 0.8,
         position: [9.989, 1.35, -5.257],
         refDistance: 5,
@@ -91,6 +92,15 @@ export function createAudioSystem({ THREE, audioListener, scene, renderer, music
         : new THREE.Audio(audioListener);
       sound.setLoop(false);
       sound.setVolume(cue.volume);
+      if (cue.fadeOutDuration) {
+        const cueStartsAt = fr3StartedAt + cue.delayMs / 1000;
+        const fadeStartsAt = cueStartsAt + cue.duration - cue.fadeOutDuration;
+        const fadeEndsAt = cueStartsAt + cue.duration;
+        const volume = sound.gain.gain;
+        volume.setValueAtTime(cue.volume, cueStartsAt);
+        volume.setValueAtTime(cue.volume, fadeStartsAt);
+        volume.linearRampToValueAtTime(0, fadeEndsAt);
+      }
       if (cue.position) {
         sound.position.fromArray(cue.position);
         sound.setRefDistance(cue.refDistance);
@@ -162,7 +172,7 @@ export function createAudioSystem({ THREE, audioListener, scene, renderer, music
           return;
         }
         sound.play();
-        if (index === 2) scheduleFr3Sounds();
+        if (index === 2) scheduleFr3Sounds(sound._startedAt);
       };
       start();
     });

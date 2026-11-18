@@ -5,7 +5,7 @@ import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { SplatMesh, SparkControls, SparkXr, utils } from "@sparkjsdev/spark";
 import { addModelGlow, convertToBasicMaterials, waitForModelTextures } from "./model-materials.js";
 import { createMarkerDetection } from "./marker-detection.js?v=lower-scan-latency-20261116";
-import { createAudioSystem } from "./audio.js?v=vr-map-overlay-20261118";
+import { createAudioSystem } from "./audio.js?v=fr3-sheep-fade-20261118";
 import { createInteractionSystem } from "./interactions.js?v=vr-map-overlay-hands-20261118";
 import { createNarrativeController } from "./narrative.js?v=glb-held-item-20261118";
 import { createInventorySystem } from "./inventory.js?v=held-map-dismiss-20261118";
