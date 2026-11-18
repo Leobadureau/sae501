@@ -15,6 +15,7 @@ export function createInteractionSystem({
   convertMaterials,
   isModelAction = () => false,
   onModelActivate = () => {},
+  onHeldMapDismiss = () => false,
   onInventoryToggle = () => {},
   isInventoryOpen = () => false,
 }) {
@@ -224,6 +225,10 @@ export function createInteractionSystem({
     });
     controller.addEventListener("select", () => {
       if (interactionController.handInput) return;
+      if (onHeldMapDismiss()) {
+        unlockAudio();
+        return;
+      }
       const hit = findControllerHit(controller);
       if (hit && isModelAction(hit.model)) {
         unlockAudio();
@@ -250,6 +255,10 @@ export function createInteractionSystem({
     });
     hand.addEventListener("pinchstart", () => {
       if (!renderer.xr.isPresenting) return;
+      if (onHeldMapDismiss()) {
+        unlockAudio();
+        return;
+      }
       const hit = findControllerHit(interactionController.controller);
       if (!hit) return;
       unlockAudio();

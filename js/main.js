@@ -6,9 +6,9 @@ import { SplatMesh, SparkControls, SparkXr, utils } from "@sparkjsdev/spark";
 import { addModelGlow, convertToBasicMaterials, waitForModelTextures } from "./model-materials.js";
 import { createMarkerDetection } from "./marker-detection.js?v=lower-scan-latency-20261116";
 import { createAudioSystem } from "./audio.js?v=vr-map-overlay-20261118";
-import { createInteractionSystem } from "./interactions.js?v=glb-held-item-20261118";
+import { createInteractionSystem } from "./interactions.js?v=held-map-dismiss-20261118";
 import { createNarrativeController } from "./narrative.js?v=glb-held-item-20261118";
-import { createInventorySystem } from "./inventory.js?v=vr-map-front-20261118";
+import { createInventorySystem } from "./inventory.js?v=held-map-dismiss-20261118";
 import { createXrTipsBanner } from "./xr-tips.js?v=vr-tips-sequence-20261118";
 import {
   SPAWN_POSITION,
@@ -1064,6 +1064,11 @@ interactionSystem = createInteractionSystem({
     || model === loadedModels.get("assets/models/Sacoche1-optimized.glb")
     || model === loadedModels.get("assets/models/old man 3d model/tripo_convert_ad709b62-a73c-451d-b686-15168f7a6180.fbx")
     || model === collectibleModel,
+  onHeldMapDismiss: () => {
+    if (!heldNarrativeMap) return false;
+    removeHeldNarrativeMap();
+    return true;
+  },
   onModelActivate: (model, holder = null) => {
     audio.unlockSpatialAudio();
     if (inventory?.isAction(model)) {

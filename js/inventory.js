@@ -304,7 +304,7 @@ export function createInventorySystem({
     const source = sourceModels.get(key);
     if (!source) return null;
     // Keep the held map large enough to read comfortably in a VR headset.
-    const model = normalizeModel(source.clone(true), 0.46, true);
+    const model = normalizeModel(source.clone(true), 0.32, true);
     const clonedMaterials = [];
     model.traverse((child) => {
       if (!child.isMesh) return;
