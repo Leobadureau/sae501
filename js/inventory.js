@@ -303,7 +303,8 @@ export function createInventorySystem({
     await previewLoads;
     const source = sourceModels.get(key);
     if (!source) return null;
-    const model = normalizeModel(source.clone(true), 0.34, true);
+    // Keep the held map large enough to read comfortably in a VR headset.
+    const model = normalizeModel(source.clone(true), 0.46, true);
     const clonedMaterials = [];
     model.traverse((child) => {
       if (!child.isMesh) return;
@@ -321,7 +322,8 @@ export function createInventorySystem({
     for (const material of clonedMaterials) material.dispose();
     model.traverse((child) => {
       if (!child.isMesh) return;
-      child.renderOrder = 1000;
+      child.renderOrder = 10000;
+      child.frustumCulled = false;
       const materials = Array.isArray(child.material) ? child.material : [child.material];
       for (const material of materials) {
         material.depthTest = false;

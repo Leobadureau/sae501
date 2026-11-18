@@ -5,10 +5,10 @@ import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { SplatMesh, SparkControls, SparkXr, utils } from "@sparkjsdev/spark";
 import { addModelGlow, convertToBasicMaterials, waitForModelTextures } from "./model-materials.js";
 import { createMarkerDetection } from "./marker-detection.js?v=lower-scan-latency-20261116";
-import { createAudioSystem } from "./audio.js?v=fr3-spatial-sounds-20261118";
+import { createAudioSystem } from "./audio.js?v=vr-map-visibility-20261118";
 import { createInteractionSystem } from "./interactions.js?v=glb-held-item-20261118";
 import { createNarrativeController } from "./narrative.js?v=glb-held-item-20261118";
-import { createInventorySystem } from "./inventory.js?v=glb-held-item-20261118";
+import { createInventorySystem } from "./inventory.js?v=vr-map-visibility-20261118";
 import { createXrTipsBanner } from "./xr-tips.js?v=vr-tips-sequence-20261118";
 import {
   SPAWN_POSITION,
@@ -753,7 +753,8 @@ async function showCorsicaMap(holder = null) {
       handPosition.lerp(indexBase.getWorldPosition(new THREE.Vector3()), 0.62);
     }
     camera.updateWorldMatrix(true, false);
-    handPosition.addScaledVector(camera.getWorldDirection(new THREE.Vector3()), 0.045);
+    // Pull the card slightly toward the viewer so it clears the hand and scene.
+    handPosition.addScaledVector(camera.getWorldDirection(new THREE.Vector3()), -0.18);
     card.position.copy(handPosition);
     card.quaternion.copy(camera.getWorldQuaternion(new THREE.Quaternion())).multiply(card.quaternion);
     card.visible = true;

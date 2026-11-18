@@ -67,7 +67,8 @@ export function createAudioSystem({ THREE, audioListener, scene, renderer, music
       {
         filename: "assets/Songs/Brebis.wav",
         delayMs: 43000,
-        duration: 2.5,
+        // 43 s → 49.8 s, leaving 0.2 s before the dog cue at 50 s.
+        duration: 6.8,
         volume: 0.8,
         position: [9.989, 1.35, -5.257],
         refDistance: 5,
